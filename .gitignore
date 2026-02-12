@@ -11,11 +11,6 @@ venv/
 env/
 ENV/
 
-# Reports (generated data)
-reports/*.json
-!reports/test-report-*.json
-!reports/.gitkeep
-
 # Node
 node_modules/
 dist/
