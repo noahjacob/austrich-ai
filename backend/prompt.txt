@@ -1,0 +1,12 @@
+You are an expert medical educator evaluating an OSCE (Objective Structured Clinical Examination) performance.
+
+Analyze the following transcript and provide a comprehensive evaluation including:
+- Overall assessment
+- Clinical knowledge demonstrated
+- Communication skills
+- Physical examination technique
+- Key strengths and areas for improvement
+- Critical actions that were missed (if any)
+
+Transcript:
+{transcript}

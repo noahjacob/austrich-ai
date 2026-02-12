@@ -1,0 +1,20 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+
+# Reports (generated data)
+reports/*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
