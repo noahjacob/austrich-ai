@@ -1,5 +1,5 @@
 import os
-import boto3
+import requests
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -40,40 +40,44 @@ async def analyze_transcript_with_bedrock(transcript: str) -> str:
     if not AWS_BEARER_TOKEN:
         raise ValueError("AWS_BEARER_TOKEN_BEDROCK environment variable not set")
     
-    # Set the bearer token as environment variable for boto3
-    os.environ['AWS_BEARER_TOKEN_BEDROCK'] = AWS_BEARER_TOKEN
+    # Clean the token (remove any whitespace/newlines)
+    clean_token = AWS_BEARER_TOKEN.strip()
     
     try:
-        # Create the Bedrock client - boto3 will automatically look for AWS_BEARER_TOKEN_BEDROCK
-        # This is AWS's new API key authentication for Bedrock
-        client = boto3.client(
-            service_name="bedrock-runtime",
-            region_name=AWS_REGION
-        )
+        print(f"DEBUG: Token loaded (length: {len(clean_token)})")
+        print(f"DEBUG: Using model: {BEDROCK_MODEL_ID}")
+        print(f"DEBUG: Region: {AWS_REGION}")
         
         # Load and prepare the prompt
         prompt_template = load_prompt()
         prompt = prompt_template.format(transcript=transcript)
         
-        print(f"DEBUG: Using model: {BEDROCK_MODEL_ID}")
-        print(f"DEBUG: Region: {AWS_REGION}")
+        # Prepare the API request
+        url = f"https://bedrock-runtime.{AWS_REGION}.amazonaws.com/model/{BEDROCK_MODEL_ID}/converse"
         
-        # Prepare the message
-        messages = [
-            {
-                "role": "user",
-                "content": [{"text": prompt}]
-            }
-        ]
+        headers = {
+            "Authorization": f"Bearer {clean_token}",
+            "Content-Type": "application/json"
+        }
         
-        # Make the API call using converse
-        response = client.converse(
-            modelId=BEDROCK_MODEL_ID,
-            messages=messages,
-        )
+        payload = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{"text": prompt}]
+                }
+            ]
+        }
+        
+        # Make the HTTP request
+        response = requests.post(url, headers=headers, json=payload)
+        
+        if response.status_code != 200:
+            raise Exception(f"HTTP {response.status_code}: {response.text}")
         
         # Extract the response text
-        report_text = response['output']['message']['content'][0]['text']
+        result = response.json()
+        report_text = result['output']['message']['content'][0]['text']
         return report_text
     
     except Exception as e:
