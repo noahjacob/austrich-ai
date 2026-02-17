@@ -12,6 +12,7 @@ class AnalyzeTranscriptRequest(BaseModel):
 class AnalyzeFromS3Request(BaseModel):
     file_key: str
     model_id: Optional[str] = None
+    batch_count: Optional[int] = 1
 
 
 # What the backend sends back after starting analysis

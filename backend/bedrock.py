@@ -2,6 +2,8 @@ import os
 import boto3
 from pathlib import Path
 from dotenv import load_dotenv
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 # Load environment variables from .env file
 load_dotenv()
@@ -11,6 +13,9 @@ AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+
+# Thread pool for parallel execution
+executor = ThreadPoolExecutor(max_workers=10)
 
 
 # Load the prompt from file for easy editing
@@ -33,6 +38,42 @@ Transcript:
 {transcript}"""
 
 
+
+
+def _call_bedrock_sync(transcript: str, model_id: str) -> str:
+    """Synchronous Bedrock call to run in thread pool"""
+    # Create Bedrock client (each thread gets its own)
+    bedrock = boto3.client(
+        service_name='bedrock-runtime',
+        region_name=AWS_REGION,
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY
+    )
+    
+    # Load and prepare the prompt
+    prompt_template = load_prompt()
+    prompt = prompt_template.format(transcript=transcript)
+    
+    # Prepare the request payload
+    payload = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [{"text": prompt}]
+            }
+        ]
+    }
+    
+    # Call Bedrock Converse API
+    response = bedrock.converse(
+        modelId=model_id,
+        messages=payload["messages"]
+    )
+    
+    # Extract the response text
+    return response['output']['message']['content'][0]['text']
+
+
 async def analyze_transcript_with_bedrock(transcript: str, model_id: str = None) -> str:
     """
     Analyze OSCE transcript using AWS Bedrock with proper AWS credentials
@@ -44,38 +85,10 @@ async def analyze_transcript_with_bedrock(transcript: str, model_id: str = None)
     
     try:
         print(f"DEBUG: Using model: {model_id}")
-        print(f"DEBUG: Region: {AWS_REGION}")
         
-        # Create Bedrock client
-        bedrock = boto3.client(
-            service_name='bedrock-runtime',
-            region_name=AWS_REGION,
-            aws_access_key_id=AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=AWS_SECRET_ACCESS_KEY
-        )
-        
-        # Load and prepare the prompt
-        prompt_template = load_prompt()
-        prompt = prompt_template.format(transcript=transcript)
-        
-        # Prepare the request payload
-        payload = {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [{"text": prompt}]
-                }
-            ]
-        }
-        
-        # Call Bedrock Converse API
-        response = bedrock.converse(
-            modelId=model_id,
-            messages=payload["messages"]
-        )
-        
-        # Extract the response text
-        report_text = response['output']['message']['content'][0]['text']
+        # Run the synchronous boto3 call in a thread pool for true parallelism
+        loop = asyncio.get_event_loop()
+        report_text = await loop.run_in_executor(executor, _call_bedrock_sync, transcript, model_id)
         return report_text
     
     except Exception as e:

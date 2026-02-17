@@ -22,6 +22,8 @@ export default function Analyze() {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedModel, setSelectedModel] = useState('us.anthropic.claude-haiku-4-5-20251001-v1:0');
+  const [batchCount, setBatchCount] = useState(1);
+  const [batchProgress, setBatchProgress] = useState<string | null>(null);
 
   // Video state
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -110,11 +112,17 @@ export default function Analyze() {
 
     setLoading(true);
     setError(null);
+    setBatchProgress(null);
 
     try {
       let response;
       if (transcriptSource === 's3') {
-        response = await analyzeFromS3(selectedS3File, selectedModel);
+        response = await analyzeFromS3(
+          selectedS3File, 
+          selectedModel, 
+          batchCount,
+          (message) => setBatchProgress(message)
+        );
       } else {
         response = await analyzeTranscript({ transcript, model_id: selectedModel });
       }
@@ -123,6 +131,7 @@ export default function Analyze() {
       setError(err instanceof Error ? err.message : 'Failed to analyze transcript');
     } finally {
       setLoading(false);
+      setBatchProgress(null);
     }
   };
 
@@ -164,6 +173,14 @@ export default function Analyze() {
           <Tabs tabs={tabs} activeTab={activeTab} onTabChange={(id) => setActiveTab(id as 'transcript' | 'video')} />
 
           {error && <ErrorMessage message={error} />}
+
+          {batchProgress && (
+            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm font-medium text-blue-900">
+                {batchProgress}
+              </p>
+            </div>
+          )}
 
           {loading ? (
             <LoadingSpinner />
@@ -340,6 +357,26 @@ export default function Analyze() {
                       ))}
                     </select>
                   </div>
+
+                  {transcriptSource === 's3' && (
+                    <div className="mb-6">
+                      <label htmlFor="batch" className="block text-sm font-medium text-gray-700 mb-2">
+                        Batch Run (1-10 runs)
+                      </label>
+                      <input
+                        id="batch"
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={batchCount}
+                        onChange={(e) => setBatchCount(parseInt(e.target.value) || 1)}
+                        className="input-field"
+                      />
+                      <p className="mt-1 text-sm text-gray-500">
+                        Run the same transcript multiple times for consistency testing
+                      </p>
+                    </div>
+                  )}
 
                   <button
                     type="submit"

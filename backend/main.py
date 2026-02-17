@@ -1,9 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pathlib import Path
 import uuid
 import json
 from datetime import datetime
+import asyncio
 
 from models import AnalyzeTranscriptRequest, AnalyzeFromS3Request, AnalyzeResponse, OSCEReport
 from bedrock import analyze_transcript_with_bedrock
@@ -49,33 +51,36 @@ async def list_s3_input_files():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/osce/analyze-from-s3", response_model=AnalyzeResponse)
+@app.post("/osce/analyze-from-s3")
 async def analyze_from_s3_endpoint(request: AnalyzeFromS3Request):
-    """Analyze transcript from S3 input bucket and save report to S3 output bucket"""
-    try:
-        # Generate unique report ID
-        report_id = str(uuid.uuid4())
+    """Analyze transcript from S3 input bucket with parallel batch processing"""
+    async def generate():
+        try:
+            transcript = get_transcript_from_s3(request.file_key)
+            batch_count = max(1, min(request.batch_count or 1, 10))
+            
+            yield f"data: {{\"status\": \"processing\", \"message\": \"Generating {batch_count} report(s) in parallel...\"}}\n\n"
+            
+            # Create all tasks and run in parallel
+            report_ids_list = [str(uuid.uuid4()) for _ in range(batch_count)]
+            tasks = [analyze_transcript_with_bedrock(transcript, request.model_id) for _ in range(batch_count)]
+            
+            # Execute all in parallel
+            results = await asyncio.gather(*tasks)
+            
+            # Save all reports
+            report_ids = []
+            for report_id, report_text in zip(report_ids_list, results):
+                file_key = save_report_to_s3(report_id, transcript, report_text, source_file=request.file_key, model_id=request.model_id)
+                report_ids.append(file_key.replace('.json', ''))
+            
+            message = f"Generated {batch_count} report(s)" if batch_count > 1 else "Analysis completed"
+            yield f"data: {{\"status\": \"complete\", \"report_id\": \"{report_ids[0]}\", \"message\": \"{message}\"}}\n\n"
         
-        # Get transcript from S3 input bucket
-        transcript = get_transcript_from_s3(request.file_key)
-        
-        # Call Bedrock to analyze transcript
-        report_text = await analyze_transcript_with_bedrock(transcript, request.model_id)
-        
-        # Save report to S3 output bucket and get the actual file key
-        file_key = save_report_to_s3(report_id, transcript, report_text, source_file=request.file_key, model_id=request.model_id)
-        
-        # Return the file key without .json extension as report_id
-        report_id_to_return = file_key.replace('.json', '')
-        
-        return AnalyzeResponse(
-            success=True,
-            report_id=report_id_to_return,
-            message="Analysis completed and saved to S3"
-        )
+        except Exception as e:
+            yield f"data: {{\"status\": \"error\", \"message\": \"{str(e)}\"}}\n\n"
     
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @app.delete("/s3/input-files/{file_key:path}")
