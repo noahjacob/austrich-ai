@@ -42,13 +42,13 @@ export async function listS3InputFiles(): Promise<{ files: Array<{ key: string; 
   return handleResponse(response);
 }
 
-export async function analyzeFromS3(fileKey: string): Promise<AnalyzeResponse> {
+export async function analyzeFromS3(fileKey: string, modelId?: string): Promise<AnalyzeResponse> {
   const response = await fetch(`${API_BASE_URL}/osce/analyze-from-s3`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ file_key: fileKey }),
+    body: JSON.stringify({ file_key: fileKey, model_id: modelId }),
   });
   return handleResponse<AnalyzeResponse>(response);
 }

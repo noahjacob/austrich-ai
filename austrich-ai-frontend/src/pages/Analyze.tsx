@@ -21,10 +21,17 @@ export default function Analyze() {
   const [loadingS3Files, setLoadingS3Files] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedModel, setSelectedModel] = useState('us.anthropic.claude-haiku-4-5-20251001-v1:0');
 
   // Video state
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [timestamp, setTimestamp] = useState('');
+
+  const models = [
+    { id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', name: 'Claude 4.5 Haiku' },
+    { id: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', name: 'Claude 4.5 Sonnet' },
+    { id: 'us.anthropic.claude-opus-4-6-v1', name: 'Claude 4.6 Opus' },
+  ];
 
   useEffect(() => {
     if (activeTab === 'transcript') {
@@ -107,9 +114,9 @@ export default function Analyze() {
     try {
       let response;
       if (transcriptSource === 's3') {
-        response = await analyzeFromS3(selectedS3File);
+        response = await analyzeFromS3(selectedS3File, selectedModel);
       } else {
-        response = await analyzeTranscript({ transcript });
+        response = await analyzeTranscript({ transcript, model_id: selectedModel });
       }
       navigate(`/reports/${response.report_id}`);
     } catch (err) {
@@ -315,6 +322,24 @@ export default function Analyze() {
                       )}
                     </div>
                   )}
+
+                  <div className="mb-6">
+                    <label htmlFor="model" className="block text-sm font-medium text-gray-700 mb-2">
+                      AI Model
+                    </label>
+                    <select
+                      id="model"
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      className="input-field"
+                    >
+                      {models.map((model) => (
+                        <option key={model.id} value={model.id}>
+                          {model.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
                   <button
                     type="submit"

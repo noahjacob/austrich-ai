@@ -33,13 +33,17 @@ Transcript:
 {transcript}"""
 
 
-async def analyze_transcript_with_bedrock(transcript: str) -> str:
+async def analyze_transcript_with_bedrock(transcript: str, model_id: str = None) -> str:
     """
     Analyze OSCE transcript using AWS Bedrock with proper AWS credentials
     Returns the full text response from the model
     """
+    # Use provided model_id or fall back to environment variable
+    if model_id is None:
+        model_id = BEDROCK_MODEL_ID
+    
     try:
-        print(f"DEBUG: Using model: {BEDROCK_MODEL_ID}")
+        print(f"DEBUG: Using model: {model_id}")
         print(f"DEBUG: Region: {AWS_REGION}")
         
         # Create Bedrock client
@@ -66,7 +70,7 @@ async def analyze_transcript_with_bedrock(transcript: str) -> str:
         
         # Call Bedrock Converse API
         response = bedrock.converse(
-            modelId=BEDROCK_MODEL_ID,
+            modelId=model_id,
             messages=payload["messages"]
         )
         

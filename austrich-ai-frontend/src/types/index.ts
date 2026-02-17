@@ -37,6 +37,7 @@ export interface OSCEReport {
 
 export interface AnalyzeTranscriptRequest {
   transcript: string;
+  model_id?: string;
 }
 
 export interface AnalyzeVideoRequest {

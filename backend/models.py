@@ -5,11 +5,13 @@ from typing import Optional
 # What the frontend sends to analyze a transcript
 class AnalyzeTranscriptRequest(BaseModel):
     transcript: str
+    model_id: Optional[str] = None
 
 
 # Request to analyze from S3 input bucket
 class AnalyzeFromS3Request(BaseModel):
     file_key: str
+    model_id: Optional[str] = None
 
 
 # What the backend sends back after starting analysis
@@ -26,6 +28,7 @@ class OSCEReport(BaseModel):
     transcript: str
     report: str  # The full report text from Bedrock
     source_file: Optional[str] = None  # S3 file key if from S3
+    model_id: Optional[str] = None  # Model used for analysis
     # Optional structured fields (for future use)
     overall_score: Optional[int] = None
     checklist_results: Optional[list] = None

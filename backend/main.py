@@ -60,10 +60,10 @@ async def analyze_from_s3_endpoint(request: AnalyzeFromS3Request):
         transcript = get_transcript_from_s3(request.file_key)
         
         # Call Bedrock to analyze transcript
-        report_text = await analyze_transcript_with_bedrock(transcript)
+        report_text = await analyze_transcript_with_bedrock(transcript, request.model_id)
         
         # Save report to S3 output bucket and get the actual file key
-        file_key = save_report_to_s3(report_id, transcript, report_text, source_file=request.file_key)
+        file_key = save_report_to_s3(report_id, transcript, report_text, source_file=request.file_key, model_id=request.model_id)
         
         # Return the file key without .json extension as report_id
         report_id_to_return = file_key.replace('.json', '')
@@ -106,7 +106,7 @@ async def analyze_transcript_endpoint(request: AnalyzeTranscriptRequest):
         report_id = str(uuid.uuid4())
         
         # Call Bedrock to analyze transcript
-        report_text = await analyze_transcript_with_bedrock(request.transcript)
+        report_text = await analyze_transcript_with_bedrock(request.transcript, request.model_id)
         
         # Create report object
         report = OSCEReport(
