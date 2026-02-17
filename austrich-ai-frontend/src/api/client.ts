@@ -37,6 +37,36 @@ export async function analyzeVideo(data: AnalyzeVideoRequest): Promise<AnalyzeRe
   return handleResponse<AnalyzeResponse>(response);
 }
 
+export async function listS3InputFiles(): Promise<{ files: Array<{ key: string; size: number; last_modified: string }> }> {
+  const response = await fetch(`${API_BASE_URL}/s3/input-files`);
+  return handleResponse(response);
+}
+
+export async function analyzeFromS3(fileKey: string): Promise<AnalyzeResponse> {
+  const response = await fetch(`${API_BASE_URL}/osce/analyze-from-s3`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ file_key: fileKey }),
+  });
+  return handleResponse<AnalyzeResponse>(response);
+}
+
+export async function deleteS3InputFile(fileKey: string): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/s3/input-files/${encodeURIComponent(fileKey)}`, {
+    method: 'DELETE',
+  });
+  return handleResponse(response);
+}
+
+export async function deleteS3OutputFile(fileKey: string): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/s3/output-files/${encodeURIComponent(fileKey)}`, {
+    method: 'DELETE',
+  });
+  return handleResponse(response);
+}
+
 export async function getReport(id: string): Promise<OSCEReport> {
   const response = await fetch(`${API_BASE_URL}/reports/${id}`);
   return handleResponse<OSCEReport>(response);
