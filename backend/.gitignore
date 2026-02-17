@@ -1,6 +1,9 @@
 # Environment variables
 .env
 
+# Reports directory (exclude generated reports)
+reports/*.json
+
 # Python
 __pycache__/
 *.py[cod]

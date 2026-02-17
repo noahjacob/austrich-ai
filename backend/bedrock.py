@@ -1,5 +1,5 @@
 import os
-import requests
+import boto3
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -7,9 +7,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Load environment variables
-AWS_BEARER_TOKEN = os.getenv("AWS_BEARER_TOKEN_BEDROCK")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 
 
 # Load the prompt from file for easy editing
@@ -34,32 +35,26 @@ Transcript:
 
 async def analyze_transcript_with_bedrock(transcript: str) -> str:
     """
-    Analyze OSCE transcript using AWS Bedrock with bearer token authentication
+    Analyze OSCE transcript using AWS Bedrock with proper AWS credentials
     Returns the full text response from the model
     """
-    if not AWS_BEARER_TOKEN:
-        raise ValueError("AWS_BEARER_TOKEN_BEDROCK environment variable not set")
-    
-    # Clean the token (remove any whitespace/newlines)
-    clean_token = AWS_BEARER_TOKEN.strip()
-    
     try:
-        print(f"DEBUG: Token loaded (length: {len(clean_token)})")
         print(f"DEBUG: Using model: {BEDROCK_MODEL_ID}")
         print(f"DEBUG: Region: {AWS_REGION}")
+        
+        # Create Bedrock client
+        bedrock = boto3.client(
+            service_name='bedrock-runtime',
+            region_name=AWS_REGION,
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY
+        )
         
         # Load and prepare the prompt
         prompt_template = load_prompt()
         prompt = prompt_template.format(transcript=transcript)
         
-        # Prepare the API request
-        url = f"https://bedrock-runtime.{AWS_REGION}.amazonaws.com/model/{BEDROCK_MODEL_ID}/converse"
-        
-        headers = {
-            "Authorization": f"Bearer {clean_token}",
-            "Content-Type": "application/json"
-        }
-        
+        # Prepare the request payload
         payload = {
             "messages": [
                 {
@@ -69,15 +64,14 @@ async def analyze_transcript_with_bedrock(transcript: str) -> str:
             ]
         }
         
-        # Make the HTTP request
-        response = requests.post(url, headers=headers, json=payload)
-        
-        if response.status_code != 200:
-            raise Exception(f"HTTP {response.status_code}: {response.text}")
+        # Call Bedrock Converse API
+        response = bedrock.converse(
+            modelId=BEDROCK_MODEL_ID,
+            messages=payload["messages"]
+        )
         
         # Extract the response text
-        result = response.json()
-        report_text = result['output']['message']['content'][0]['text']
+        report_text = response['output']['message']['content'][0]['text']
         return report_text
     
     except Exception as e:
