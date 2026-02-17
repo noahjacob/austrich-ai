@@ -7,6 +7,11 @@ class AnalyzeTranscriptRequest(BaseModel):
     transcript: str
 
 
+# Request to analyze from S3 input bucket
+class AnalyzeFromS3Request(BaseModel):
+    file_key: str
+
+
 # What the backend sends back after starting analysis
 class AnalyzeResponse(BaseModel):
     success: bool
@@ -20,6 +25,7 @@ class OSCEReport(BaseModel):
     created_at: str
     transcript: str
     report: str  # The full report text from Bedrock
+    source_file: Optional[str] = None  # S3 file key if from S3
     # Optional structured fields (for future use)
     overall_score: Optional[int] = None
     checklist_results: Optional[list] = None

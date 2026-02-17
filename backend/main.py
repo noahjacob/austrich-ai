@@ -5,8 +5,18 @@ import uuid
 import json
 from datetime import datetime
 
-from models import AnalyzeTranscriptRequest, AnalyzeResponse, OSCEReport
+from models import AnalyzeTranscriptRequest, AnalyzeFromS3Request, AnalyzeResponse, OSCEReport
 from bedrock import analyze_transcript_with_bedrock
+from s3_client import (
+    list_input_transcripts,
+    get_transcript_from_s3,
+    save_report_to_s3,
+    get_report_from_s3,
+    list_reports_from_s3,
+    delete_file_from_s3,
+    S3_INPUT_BUCKET,
+    S3_OUTPUT_BUCKET
+)
 
 app = FastAPI(title="AuSTRICH-AI API")
 
@@ -27,6 +37,65 @@ REPORTS_DIR.mkdir(exist_ok=True)
 @app.get("/")
 async def root():
     return {"message": "AuSTRICH-AI API", "status": "running"}
+
+
+@app.get("/s3/input-files")
+async def list_s3_input_files():
+    """List all transcript files from S3 input bucket"""
+    try:
+        files = list_input_transcripts()
+        return {"files": files}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/osce/analyze-from-s3", response_model=AnalyzeResponse)
+async def analyze_from_s3_endpoint(request: AnalyzeFromS3Request):
+    """Analyze transcript from S3 input bucket and save report to S3 output bucket"""
+    try:
+        # Generate unique report ID
+        report_id = str(uuid.uuid4())
+        
+        # Get transcript from S3 input bucket
+        transcript = get_transcript_from_s3(request.file_key)
+        
+        # Call Bedrock to analyze transcript
+        report_text = await analyze_transcript_with_bedrock(transcript)
+        
+        # Save report to S3 output bucket and get the actual file key
+        file_key = save_report_to_s3(report_id, transcript, report_text, source_file=request.file_key)
+        
+        # Return the file key without .json extension as report_id
+        report_id_to_return = file_key.replace('.json', '')
+        
+        return AnalyzeResponse(
+            success=True,
+            report_id=report_id_to_return,
+            message="Analysis completed and saved to S3"
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/s3/input-files/{file_key:path}")
+async def delete_input_file(file_key: str):
+    """Delete a file from S3 input bucket"""
+    try:
+        delete_file_from_s3(S3_INPUT_BUCKET, file_key)
+        return {"success": True, "message": "File deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/s3/output-files/{file_key:path}")
+async def delete_output_file(file_key: str):
+    """Delete a file from S3 output bucket"""
+    try:
+        delete_file_from_s3(S3_OUTPUT_BUCKET, file_key)
+        return {"success": True, "message": "File deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/osce/analyze-transcript", response_model=AnalyzeResponse)
@@ -64,17 +133,23 @@ async def analyze_transcript_endpoint(request: AnalyzeTranscriptRequest):
 
 @app.get("/reports/{report_id}", response_model=OSCEReport)
 async def get_report(report_id: str):
-    """Retrieve a specific OSCE report by ID"""
+    """Retrieve a specific OSCE report by ID (tries S3 first, then local)"""
     try:
-        report_path = REPORTS_DIR / f"{report_id}.json"
-        
-        if not report_path.exists():
-            raise HTTPException(status_code=404, detail="Report not found")
-        
-        with open(report_path, "r", encoding="utf-8") as f:
-            report_data = json.load(f)
-        
-        return OSCEReport(**report_data)
+        # Try S3 first
+        try:
+            report_data = get_report_from_s3(report_id)
+            return OSCEReport(**report_data)
+        except:
+            # Fallback to local file
+            report_path = REPORTS_DIR / f"{report_id}.json"
+            
+            if not report_path.exists():
+                raise HTTPException(status_code=404, detail="Report not found")
+            
+            with open(report_path, "r", encoding="utf-8") as f:
+                report_data = json.load(f)
+            
+            return OSCEReport(**report_data)
     
     except HTTPException:
         raise
@@ -84,20 +159,32 @@ async def get_report(report_id: str):
 
 @app.get("/reports")
 async def list_reports():
-    """List all available reports"""
+    """List all available reports (combines S3 and local)"""
     try:
-        reports = []
+        # Get reports from S3
+        s3_reports = list_reports_from_s3()
+        
+        # Get local reports
+        local_reports = []
         for report_file in REPORTS_DIR.glob("*.json"):
             with open(report_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                reports.append({
+                local_reports.append({
                     "id": data["id"],
-                    "created_at": data["created_at"]
+                    "created_at": data.get("created_at", "unknown"),
+                    "source": "local"
                 })
         
-        # Sort by creation date (newest first)
-        reports.sort(key=lambda x: x["created_at"], reverse=True)
-        return {"reports": reports}
+        # Mark S3 reports
+        for report in s3_reports:
+            report["source"] = "s3"
+            report["created_at"] = report.pop("last_modified")
+        
+        # Combine and sort
+        all_reports = s3_reports + local_reports
+        all_reports.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        
+        return {"reports": all_reports}
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
