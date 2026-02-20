@@ -47,24 +47,25 @@ def get_transcript_from_s3(file_key: str) -> str:
     return response['Body'].read().decode('utf-8')
 
 
-def save_report_to_s3(report_id: str, transcript: str, report_text: str, source_file: str = None, model_id: str = None):
+def save_report_to_s3(report_id: str, transcript: str, report_text: str, source_file: str = None, model_id: str = None, prompt_name: str = None):
     """Save report to output bucket"""
     s3 = get_s3_client()
-    
+
     report_data = {
         'id': report_id,
         'created_at': datetime.utcnow().isoformat(),
         'source_file': source_file,
         'model_id': model_id,
+        'prompt_name': prompt_name,
         'transcript': transcript,
         'report': report_text
     }
-    
+
     # Use source filename if provided, otherwise use report_id
     if source_file:
-        # Remove extension and add model name + timestamp
+        # Remove extension and add model name + prompt name + timestamp
         base_name = source_file.rsplit('.', 1)[0]
-        
+
         # Extract model name from model_id (e.g., 'haiku', 'sonnet', 'opus')
         model_name = 'unknown'
         if model_id:
@@ -74,10 +75,11 @@ def save_report_to_s3(report_id: str, transcript: str, report_text: str, source_
                 model_name = 'sonnet'
             elif 'opus' in model_id.lower():
                 model_name = 'opus'
-        
-        # Add timestamp to make unique
+
+        # Add timestamp + short unique ID to make unique across batch runs
         timestamp = datetime.utcnow().strftime('%Y%m%d-%H%M%S')
-        file_key = f"{base_name}-{model_name}-{timestamp}.json"
+        prompt_suffix = f"-{prompt_name}" if prompt_name else ""
+        file_key = f"{base_name}-{model_name}{prompt_suffix}-{timestamp}-{report_id[:8]}.json"
     else:
         file_key = f"{report_id}.json"
     

@@ -71,7 +71,7 @@ async def analyze_from_s3_endpoint(request: AnalyzeFromS3Request):
             # Save all reports
             report_ids = []
             for report_id, report_text in zip(report_ids_list, results):
-                file_key = save_report_to_s3(report_id, transcript, report_text, source_file=request.file_key, model_id=request.model_id)
+                file_key = save_report_to_s3(report_id, transcript, report_text, source_file=request.file_key, model_id=request.model_id, prompt_name=request.prompt_name)
                 report_ids.append(file_key.replace('.json', ''))
 
             message = f"Generated {batch_count} report(s)" if batch_count > 1 else "Analysis completed"
