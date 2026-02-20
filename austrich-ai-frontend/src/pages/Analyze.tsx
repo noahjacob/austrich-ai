@@ -22,6 +22,7 @@ export default function Analyze() {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedModel, setSelectedModel] = useState('us.anthropic.claude-haiku-4-5-20251001-v1:0');
+  const [selectedPrompt, setSelectedPrompt] = useState('prompt');
   const [batchCount, setBatchCount] = useState(1);
   const [batchProgress, setBatchProgress] = useState<string | null>(null);
 
@@ -33,6 +34,11 @@ export default function Analyze() {
     { id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', name: 'Claude 4.5 Haiku' },
     { id: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', name: 'Claude 4.5 Sonnet' },
     { id: 'us.anthropic.claude-opus-4-6-v1', name: 'Claude 4.6 Opus' },
+  ];
+
+  const prompts = [
+    { id: 'prompt', name: 'Standard OSCE Prompt' },
+    { id: 'checklist_prompt', name: 'Checklist Prompt' },
   ];
 
   useEffect(() => {
@@ -118,13 +124,14 @@ export default function Analyze() {
       let response;
       if (transcriptSource === 's3') {
         response = await analyzeFromS3(
-          selectedS3File, 
-          selectedModel, 
+          selectedS3File,
+          selectedModel,
           batchCount,
-          (message) => setBatchProgress(message)
+          (message) => setBatchProgress(message),
+          selectedPrompt
         );
       } else {
-        response = await analyzeTranscript({ transcript, model_id: selectedModel });
+        response = await analyzeTranscript({ transcript, model_id: selectedModel, prompt_name: selectedPrompt });
       }
       navigate(`/reports/${response.report_id}`);
     } catch (err) {
@@ -353,6 +360,24 @@ export default function Analyze() {
                       {models.map((model) => (
                         <option key={model.id} value={model.id}>
                           {model.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="mb-6">
+                    <label htmlFor="prompt" className="block text-sm font-medium text-gray-700 mb-2">
+                      Prompt
+                    </label>
+                    <select
+                      id="prompt"
+                      value={selectedPrompt}
+                      onChange={(e) => setSelectedPrompt(e.target.value)}
+                      className="input-field"
+                    >
+                      {prompts.map((prompt) => (
+                        <option key={prompt.id} value={prompt.id}>
+                          {prompt.name}
                         </option>
                       ))}
                     </select>

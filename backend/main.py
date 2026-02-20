@@ -58,27 +58,27 @@ async def analyze_from_s3_endpoint(request: AnalyzeFromS3Request):
         try:
             transcript = get_transcript_from_s3(request.file_key)
             batch_count = max(1, min(request.batch_count or 1, 10))
-            
-            yield f"data: {{\"status\": \"processing\", \"message\": \"Generating {batch_count} report(s) in parallel...\"}}\n\n"
-            
+
+            yield f"data: {json.dumps({'status': 'processing', 'message': f'Generating {batch_count} report(s) in parallel...'})}\n\n"
+
             # Create all tasks and run in parallel
             report_ids_list = [str(uuid.uuid4()) for _ in range(batch_count)]
-            tasks = [analyze_transcript_with_bedrock(transcript, request.model_id) for _ in range(batch_count)]
-            
+            tasks = [analyze_transcript_with_bedrock(transcript, request.model_id, request.prompt_name or "prompt") for _ in range(batch_count)]
+
             # Execute all in parallel
             results = await asyncio.gather(*tasks)
-            
+
             # Save all reports
             report_ids = []
             for report_id, report_text in zip(report_ids_list, results):
                 file_key = save_report_to_s3(report_id, transcript, report_text, source_file=request.file_key, model_id=request.model_id)
                 report_ids.append(file_key.replace('.json', ''))
-            
+
             message = f"Generated {batch_count} report(s)" if batch_count > 1 else "Analysis completed"
-            yield f"data: {{\"status\": \"complete\", \"report_id\": \"{report_ids[0]}\", \"message\": \"{message}\"}}\n\n"
-        
+            yield f"data: {json.dumps({'status': 'complete', 'report_id': report_ids[0], 'message': message})}\n\n"
+
         except Exception as e:
-            yield f"data: {{\"status\": \"error\", \"message\": \"{str(e)}\"}}\n\n"
+            yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
     
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -111,7 +111,7 @@ async def analyze_transcript_endpoint(request: AnalyzeTranscriptRequest):
         report_id = str(uuid.uuid4())
         
         # Call Bedrock to analyze transcript
-        report_text = await analyze_transcript_with_bedrock(request.transcript, request.model_id)
+        report_text = await analyze_transcript_with_bedrock(request.transcript, request.model_id, request.prompt_name or "prompt")
         
         # Create report object
         report = OSCEReport(

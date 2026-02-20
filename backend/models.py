@@ -6,6 +6,7 @@ from typing import Optional
 class AnalyzeTranscriptRequest(BaseModel):
     transcript: str
     model_id: Optional[str] = None
+    prompt_name: Optional[str] = "prompt"
 
 
 # Request to analyze from S3 input bucket
@@ -13,6 +14,7 @@ class AnalyzeFromS3Request(BaseModel):
     file_key: str
     model_id: Optional[str] = None
     batch_count: Optional[int] = 1
+    prompt_name: Optional[str] = "prompt"
 
 
 # What the backend sends back after starting analysis

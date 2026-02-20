@@ -43,17 +43,18 @@ export async function listS3InputFiles(): Promise<{ files: Array<{ key: string; 
 }
 
 export async function analyzeFromS3(
-  fileKey: string, 
-  modelId?: string, 
+  fileKey: string,
+  modelId?: string,
   batchCount?: number,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  promptName?: string
 ): Promise<AnalyzeResponse> {
   const response = await fetch(`${API_BASE_URL}/osce/analyze-from-s3`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ file_key: fileKey, model_id: modelId, batch_count: batchCount }),
+    body: JSON.stringify({ file_key: fileKey, model_id: modelId, batch_count: batchCount, prompt_name: promptName }),
   });
 
   if (!response.ok) {
