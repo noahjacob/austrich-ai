@@ -13,12 +13,21 @@ async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 export async function analyzeTranscript(data: AnalyzeTranscriptRequest): Promise<AnalyzeResponse> {
+  const formData = new FormData();
+  
+  if (data.file) {
+    formData.append('file', data.file);
+  } else if (data.transcript) {
+    formData.append('transcript', data.transcript);
+  }
+  
+  if (data.model_id) {
+    formData.append('model_id', data.model_id);
+  }
+  
   const response = await fetch(`${API_BASE_URL}/osce/analyze-transcript`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
+    body: formData,
   });
   return handleResponse<AnalyzeResponse>(response);
 }

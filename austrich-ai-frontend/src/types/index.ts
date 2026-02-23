@@ -36,7 +36,8 @@ export interface OSCEReport {
 }
 
 export interface AnalyzeTranscriptRequest {
-  transcript: string;
+  transcript?: string;
+  file?: File;
   model_id?: string;
 }
 

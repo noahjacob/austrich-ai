@@ -71,7 +71,9 @@ def _call_bedrock_sync(transcript: str, model_id: str) -> str:
     )
     
     # Extract the response text
-    return response['output']['message']['content'][0]['text']
+    result = response['output']['message']['content'][0]['text']
+    print(f"DEBUG: LLM Response (first 500 chars): {result[:500]}")
+    return result
 
 
 async def analyze_transcript_with_bedrock(transcript: str, model_id: str = None) -> str:

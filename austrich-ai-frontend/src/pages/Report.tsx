@@ -5,12 +5,23 @@ import type { OSCEReport } from '../types';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorMessage from '../components/ErrorMessage';
 
+interface ChecklistItem {
+  item: string;
+  status: 'Yes' | 'No' | 'Not Sure';
+  evidence: string | null;
+  timestamp: string | null;
+  timestamp_end?: string | null;
+}
+
 export default function Report() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [report, setReport] = useState<OSCEReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
+  const [highlightedTimestamp, setHighlightedTimestamp] = useState<string | null>(null);
+  const [highlightedRange, setHighlightedRange] = useState<{start: string, end: string} | null>(null);
 
   useEffect(() => {
     if (!id) {
@@ -25,6 +36,14 @@ export default function Report() {
         const data = await getReport(id);
         console.log('Report data:', data);
         setReport(data);
+        if (data.report) {
+          try {
+            const parsed = JSON.parse(data.report);
+            setChecklist(parsed.checklist || []);
+          } catch (e) {
+            console.error('Failed to parse report JSON:', e);
+          }
+        }
       } catch (err) {
         console.error('Error fetching report:', err);
         setError(err instanceof Error ? err.message : 'Failed to load report');
@@ -50,6 +69,46 @@ export default function Report() {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const scrollToTimestamp = (timestamp: string, timestamp_end?: string | null) => {
+    if (timestamp_end) {
+      setHighlightedRange({start: timestamp, end: timestamp_end});
+    } else {
+      setHighlightedTimestamp(timestamp);
+    }
+    
+    // Try exact match first
+    let element = document.getElementById(`timestamp-${timestamp.replace(/:/g, '-')}`);
+    
+    // If not found, find closest timestamp
+    if (!element) {
+      const allTimestamps = Array.from(document.querySelectorAll('[id^="timestamp-"]'));
+      const targetTime = timestamp.split(':').reduce((acc, val) => acc * 60 + parseInt(val), 0);
+      
+      let closest = allTimestamps[0];
+      let minDiff = Infinity;
+      
+      allTimestamps.forEach(el => {
+        const ts = el.id.replace('timestamp-', '').replace(/-/g, ':');
+        const time = ts.split(':').reduce((acc, val) => acc * 60 + parseInt(val), 0);
+        const diff = Math.abs(time - targetTime);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closest = el;
+        }
+      });
+      
+      element = closest as HTMLElement;
+    }
+    
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => {
+        setHighlightedTimestamp(null);
+        setHighlightedRange(null);
+      }, 3000);
+    }
   };
 
   if (loading) {
@@ -96,21 +155,123 @@ export default function Report() {
 
         {/* If text report exists, display it as markdown */}
         {report.report ? (
-          <div className="card">
-            <div className="prose max-w-none" style={{ whiteSpace: 'pre-wrap' }}>
-              {report.report}
+          <>
+            {/* Checklist Table */}
+            <div className="card mb-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-semibold text-gray-900">Critical Data Gathering & Exam Checklist</h2>
+                <a
+                  href={`http://localhost:8000/reports/${report.id}/pdf`}
+                  download
+                  className="btn-primary"
+                >
+                  Download PDF Report
+                </a>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-primary-600">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
+                        #
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
+                        Item
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-white uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
+                        Evidence
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {checklist.map((item, idx) => (
+                      <tr key={idx} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {idx + 1}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-900">
+                          {item.item}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          {item.status === 'Yes' && (
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                              ✓ Yes
+                            </span>
+                          )}
+                          {item.status === 'No' && (
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
+                              ✗ No
+                            </span>
+                          )}
+                          {item.status === 'Not Sure' && (
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+                              ⚠ Not Sure
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-700">
+                          {item.evidence ? (
+                            <div>
+                              <p className="italic">"{item.evidence}"</p>
+                              {item.timestamp && (
+                                <button
+                                  onClick={() => scrollToTimestamp(item.timestamp!, item.timestamp_end)}
+                                  className="text-xs text-primary-600 hover:text-primary-800 mt-1 underline"
+                                >
+                                  Jump to {item.timestamp}
+                                  {item.timestamp_end && ` - ${item.timestamp_end}`}
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
+
+            {/* Transcript Viewer */}
             {report.transcript && (
-              <div className="mt-8 pt-8 border-t border-gray-200">
-                <h2 className="text-2xl font-semibold text-gray-900 mb-4">Original Transcript</h2>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <pre className="whitespace-pre-wrap text-sm text-gray-700 font-mono">
-                    {report.transcript}
-                  </pre>
+              <div className="card">
+                <h2 className="text-2xl font-semibold text-gray-900 mb-4">Transcript</h2>
+                <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
+                  {report.transcript.split('\n').map((line, idx) => {
+                    const timestampMatch = line.match(/\[(\d{2}:\d{2}:\d{2})/);  
+                    const timestamp = timestampMatch ? timestampMatch[1] : null;
+                    
+                    let isHighlighted = false;
+                    if (highlightedRange && timestamp) {
+                      isHighlighted = timestamp >= highlightedRange.start && timestamp <= highlightedRange.end;
+                    } else if (timestamp && highlightedTimestamp === timestamp) {
+                      isHighlighted = true;
+                    }
+                    
+                    return (
+                      <div
+                        key={idx}
+                        id={timestamp ? `timestamp-${timestamp.replace(/:/g, '-')}` : undefined}
+                        className={`py-1 px-2 rounded transition-colors ${
+                          isHighlighted ? 'bg-yellow-200' : ''
+                        }`}
+                      >
+                        <span className="text-xs text-gray-500 font-mono mr-2">
+                          {timestamp || ''}
+                        </span>
+                        <span className="text-sm text-gray-800">{line.replace(/\[.*?\]/, '')}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
-          </div>
+          </>
         ) : (
           <>
             {/* Original structured view */}

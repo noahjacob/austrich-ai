@@ -1,14 +1,16 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from pathlib import Path
 import uuid
 import json
 from datetime import datetime
 import asyncio
+from typing import Optional
 
 from models import AnalyzeTranscriptRequest, AnalyzeFromS3Request, AnalyzeResponse, OSCEReport
 from bedrock import analyze_transcript_with_bedrock
+from pdf_generator import generate_pdf_report
 from s3_client import (
     list_input_transcripts,
     get_transcript_from_s3,
@@ -104,24 +106,73 @@ async def delete_output_file(file_key: str):
 
 
 @app.post("/osce/analyze-transcript", response_model=AnalyzeResponse)
-async def analyze_transcript_endpoint(request: AnalyzeTranscriptRequest):
-    """Analyze OSCE transcript using AWS Bedrock"""
+async def analyze_transcript_endpoint(
+    file: Optional[UploadFile] = File(None),
+    transcript: Optional[str] = Form(None),
+    model_id: Optional[str] = Form(None)
+):
+    """Analyze OSCE transcript using AWS Bedrock - accepts file upload or text"""
     try:
+        # Get transcript from file or form data
+        if file:
+            content = await file.read()
+            transcript_text = content.decode('utf-8')
+        elif transcript:
+            transcript_text = transcript
+        else:
+            raise HTTPException(status_code=400, detail="Either file or transcript text required")
+        
         # Generate unique report ID
         report_id = str(uuid.uuid4())
         
         # Call Bedrock to analyze transcript
-        report_text = await analyze_transcript_with_bedrock(request.transcript, request.model_id)
+        report_text = await analyze_transcript_with_bedrock(transcript_text, model_id)
         
-        # Create report object
+        # Parse JSON response
+        try:
+            # Clean response - remove markdown, extra text
+            cleaned_text = report_text.strip()
+            
+            # Remove markdown code blocks
+            if '```json' in cleaned_text:
+                cleaned_text = cleaned_text.split('```json', 1)[1]
+                cleaned_text = cleaned_text.split('```', 1)[0]
+            elif '```' in cleaned_text:
+                cleaned_text = cleaned_text.split('```', 1)[1]
+                cleaned_text = cleaned_text.rsplit('```', 1)[0]
+            
+            # Find JSON object
+            start = cleaned_text.find('{')
+            end = cleaned_text.rfind('}') + 1
+            if start != -1 and end > start:
+                cleaned_text = cleaned_text[start:end]
+            
+            report_data = json.loads(cleaned_text)
+            
+            # Clean timestamps - remove milliseconds
+            for item in report_data.get('checklist', []):
+                if item.get('timestamp'):
+                    item['timestamp'] = item['timestamp'].split('.')[0].split(',')[0][:8]
+                if item.get('timestamp_end'):
+                    item['timestamp_end'] = item['timestamp_end'].split('.')[0].split(',')[0][:8]
+                    
+        except json.JSONDecodeError as e:
+            print(f"JSON parse error: {e}")
+            print(f"Response: {report_text[:1000]}")
+            raise HTTPException(status_code=500, detail=f"LLM did not return valid JSON: {str(e)}")
+        
+        # Generate PDF report
+        pdf_path = generate_pdf_report(report_id, transcript_text, report_data, model_id)
+        
+        # Save JSON for API access
         report = OSCEReport(
             id=report_id,
             created_at=datetime.utcnow().isoformat(),
-            transcript=request.transcript,
-            report=report_text
+            transcript=transcript_text,
+            report=json.dumps(report_data),
+            model_id=model_id
         )
         
-        # Save report to file
         report_path = REPORTS_DIR / f"{report_id}.json"
         with open(report_path, "w", encoding="utf-8") as f:
             json.dump(report.model_dump(), f, indent=2, ensure_ascii=False)
@@ -156,6 +207,25 @@ async def get_report(report_id: str):
             
             return OSCEReport(**report_data)
     
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/reports/{report_id}/pdf")
+async def get_report_pdf(report_id: str):
+    """Download PDF report"""
+    try:
+        pdf_path = REPORTS_DIR / f"{report_id}.pdf"
+        if not pdf_path.exists():
+            raise HTTPException(status_code=404, detail="PDF report not found")
+        
+        return FileResponse(
+            pdf_path,
+            media_type="application/pdf",
+            filename=f"osce_report_{report_id}.pdf"
+        )
     except HTTPException:
         raise
     except Exception as e:
