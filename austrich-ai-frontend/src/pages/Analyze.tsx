@@ -89,15 +89,25 @@ export default function Analyze() {
   };
 
   const scrollToTimestamp = (timestamp: string, timestamp_end?: string | null) => {
+    // Clear previous highlights first
+    setHighlightedTimestamp(null);
+    setHighlightedRange(null);
+    
+    // Set new highlight
     if (timestamp_end) {
       setHighlightedRange({start: timestamp, end: timestamp_end});
+    } else {
+      setHighlightedTimestamp(timestamp);
     }
     
     const element = document.getElementById(`timestamp-${timestamp.replace(/:/g, '-')}`);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setTimeout(() => setHighlightedRange(null), 3000);
     }
+  };
+
+  const clearHighlight = () => {
+    setHighlightedRange(null);
   };
 
   const resetAnalysis = () => {
@@ -194,7 +204,14 @@ export default function Analyze() {
           {/* Transcript Viewer */}
           {report.transcript && (
             <div className="card">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">Transcript</h2>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-semibold text-gray-900">Transcript</h2>
+                {highlightedRange && (
+                  <button onClick={clearHighlight} className="text-sm text-gray-600 hover:text-gray-800">
+                    Clear Highlight
+                  </button>
+                )}
+              </div>
               <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
                 {report.transcript.split('\n').map((line, idx) => {
                   const timestampMatch = line.match(/\[(\d{2}:\d{2}:\d{2})/);
