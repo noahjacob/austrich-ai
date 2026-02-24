@@ -36,6 +36,11 @@ export default function Analyze() {
     setError(null);
   };
 
+  const handleDiscard = () => {
+    setTranscriptFile(null);
+    setError(null);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -90,14 +95,11 @@ export default function Analyze() {
 
   const scrollToTimestamp = (timestamp: string, timestamp_end?: string | null) => {
     // Clear previous highlights first
-    setHighlightedTimestamp(null);
     setHighlightedRange(null);
     
     // Set new highlight
     if (timestamp_end) {
       setHighlightedRange({start: timestamp, end: timestamp_end});
-    } else {
-      setHighlightedTimestamp(timestamp);
     }
     
     const element = document.getElementById(`timestamp-${timestamp.replace(/:/g, '-')}`);
@@ -261,7 +263,7 @@ export default function Analyze() {
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-gray-900 mb-3">Record Audio</label>
-                <AudioRecorder onRecordingComplete={handleRecordingComplete} />
+                <AudioRecorder onRecordingComplete={handleRecordingComplete} onDiscard={handleDiscard} />
               </div>
 
               <div className="relative">
@@ -287,8 +289,19 @@ export default function Analyze() {
               </div>
 
               {transcriptFile && (
-                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <p className="text-sm text-green-800 font-medium">Ready: {transcriptFile.name}</p>
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    <p className="text-sm text-green-800 font-medium">Ready: {transcriptFile.name}</p>
+                  </div>
+                  <button
+                    onClick={() => setTranscriptFile(null)}
+                    className="text-sm text-red-600 hover:text-red-800 font-medium"
+                  >
+                    Remove
+                  </button>
                 </div>
               )}
 
