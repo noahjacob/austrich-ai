@@ -18,8 +18,8 @@ You are evaluating an OSCE (Objective Structured Clinical Examination) transcrip
 13. Checks/mentions checking pupils with penlight
 14. Checks/mentions checking for cuts on tongue
 15. Listens/mentions listening to lungs 4 positions
-16. Feels/mentions feeling for heart
-17. Listens/mentions listening to heart in 4 positions
+16. Feels/mentions feeling for heart (palpating the chest with hands, NOT listening with stethoscope)
+17. Listens/mentions listening to heart in 4 positions (auscultating with stethoscope, NOT palpating)
 18. Checks/mentions checking for swelling in ankles
 19. Checks/mentions checking arms and legs for strength
 20. Checks/mentions checking for reflexes
@@ -54,3 +54,22 @@ Example format:
 
 Transcript:
 {transcript}
+
+---
+
+Now evaluate each item systematically. For items with multiple sub-requirements, explicitly count what you found:
+
+Item #2: "Asks about symptoms prior to onset (lightheadedness, dizziness, visual abnormalities, palpitations, chest pain) - must ask at least 3"
+- Search the transcript for: lightheadedness, dizziness, visual abnormalities, palpitations, chest pain
+- Count how many were addressed
+- If count >= 3: status="Yes", if 0 < count < 3: status="Not Sure", if count=0: status="No"
+
+Item #4: "Asks about symptoms upon regaining consciousness (loss of urine, tongue biting, feeling fine on recovery or sluggish, injury other than head) - must ask all 3"
+- Search for: loss of urine, tongue biting, feeling fine/sluggish on recovery, injury other than head
+- Count how many were addressed
+- If all addressed: status="Yes", if some but not all: status="Not Sure", if none: status="No"
+
+Item #5: "Asks about recent illnesses impacting oral intake (eating drinking normally, nausea, vomiting, diarrhea, black or bloody stools, other blood loss) - must ask at least 4"
+- Search for: eating/drinking normally, nausea, vomiting, diarrhea, black/bloody stools, blood loss
+- Count how many were addressed
+- If count >= 4: status="Yes", if 0 < count < 4: status="Not Sure", if count=0: status="No"

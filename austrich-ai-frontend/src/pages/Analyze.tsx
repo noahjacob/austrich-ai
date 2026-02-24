@@ -148,7 +148,7 @@ export default function Analyze() {
                   {checklist.map((item, idx) => (
                     <tr key={idx} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{idx + 1}</td>
-                      <td className="px-6 py-4 text-sm text-gray-900">{item.item}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">{item.item.replace(/\s*\([^)]*\)/g, '')}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         {item.status === 'Yes' && (
                           <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
