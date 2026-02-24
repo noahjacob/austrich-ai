@@ -14,7 +14,7 @@ You are evaluating an OSCE (Objective Structured Clinical Examination) transcrip
 9. Asks about a history of seizure
 10. Asks about medications
 11. Checks/mentions checking blood pressure/pulse lying down and upright
-12. Checks/mentions checking for neck tenderness
+12. Checks/mentions checking for neck tenderness (palpating/feeling the neck for pain or injury, NOT just looking at neck veins)
 13. Checks/mentions checking pupils with penlight
 14. Checks/mentions checking for cuts on tongue
 15. Listens/mentions listening to lungs 4 positions
@@ -27,13 +27,17 @@ You are evaluating an OSCE (Objective Structured Clinical Examination) transcrip
 ## Important Notes:
 - For items 1-10 (history questions): Mark as "Yes" if the information was obtained - either by the student asking OR by the patient volunteering the information. If the patient already provided the information earlier in the conversation, the student does not need to ask again.
 - For items 11-20 (physical exam): Since this is a transcript, look for the student SAYING they are performing the action (e.g., "I'm going to check your blood pressure", "Let me listen to your lungs", "I'm checking your reflexes")
+- For items requiring multiple questions (e.g., "must ask at least 3" or "must ask all 3"): COUNT the number of sub-items that were clearly addressed. If the count meets or exceeds the threshold, mark as "Yes". If some sub-items were addressed but the count is below the threshold, mark as "Not Sure" to flag for review. Only use "No" if there is no evidence of any sub-items being addressed.
 
 ## Instructions:
 For each item, determine:
-- **status**: "Yes" (student did it), "No" (student didn't do it), or "Not Sure" (unclear from transcript)
+- **status**: MUST be one of exactly three values: "Yes", "No", or "Not Sure". DO NOT use any other values like "Partial" or anything else.
+  - Use "Yes" only when you have clear evidence the requirement was fully met
+  - Use "No" when you are confident the requirement was NOT met
+  - Use "Not Sure" when there is partial or ambiguous evidence (including when some but not all required sub-items were addressed)
 - **evidence**: Include BOTH the student's question/action AND the patient's response as a conversation snippet. Copy the EXACT text from the transcript. Do NOT paraphrase.
-- **timestamp**: The timestamp where the conversation exchange STARTS (format: "HH:MM:SS"). If status is "No" or "Not Sure", set to null.
-- **timestamp_end**: The timestamp where the conversation exchange ENDS (format: "HH:MM:SS"). This allows highlighting the full exchange. If status is "No" or "Not Sure", set to null.
+- **timestamp**: The timestamp where the conversation exchange STARTS (format: "HH:MM:SS"). If status is "No" or if there is no evidence, set to null. For "Not Sure" with evidence, include the timestamp.
+- **timestamp_end**: The timestamp where the conversation exchange ENDS (format: "HH:MM:SS"). This allows highlighting the full exchange. If status is "No" or if there is no evidence, set to null. For "Not Sure" with evidence, include the timestamp.
 
 ## Evidence Format:
 When providing evidence, include the conversation exchange:

@@ -48,7 +48,7 @@ def get_transcript_from_s3(file_key: str) -> str:
 
 
 def save_report_to_s3(report_id: str, transcript: str, report_text: str, source_file: str = None, model_id: str = None):
-    """Save report to output bucket"""
+    """Save report to reports/ folder in output bucket"""
     s3 = get_s3_client()
     
     report_data = {
@@ -60,26 +60,7 @@ def save_report_to_s3(report_id: str, transcript: str, report_text: str, source_
         'report': report_text
     }
     
-    # Use source filename if provided, otherwise use report_id
-    if source_file:
-        # Remove extension and add model name + timestamp
-        base_name = source_file.rsplit('.', 1)[0]
-        
-        # Extract model name from model_id (e.g., 'haiku', 'sonnet', 'opus')
-        model_name = 'unknown'
-        if model_id:
-            if 'haiku' in model_id.lower():
-                model_name = 'haiku'
-            elif 'sonnet' in model_id.lower():
-                model_name = 'sonnet'
-            elif 'opus' in model_id.lower():
-                model_name = 'opus'
-        
-        # Add timestamp to make unique
-        timestamp = datetime.utcnow().strftime('%Y%m%d-%H%M%S')
-        file_key = f"{base_name}-{model_name}-{timestamp}.json"
-    else:
-        file_key = f"{report_id}.json"
+    file_key = f"reports/{report_id}.json"
     
     s3.put_object(
         Bucket=S3_OUTPUT_BUCKET,
@@ -91,28 +72,39 @@ def save_report_to_s3(report_id: str, transcript: str, report_text: str, source_
 
 
 def get_report_from_s3(report_id: str) -> Dict:
-    """Retrieve report from output bucket"""
+    """Retrieve report from reports/ folder in output bucket"""
     s3 = get_s3_client()
-    # Try with .json extension if not already present
-    file_key = f"{report_id}.json" if not report_id.endswith('.json') else report_id
+    file_key = f"reports/{report_id}.json"
     response = s3.get_object(Bucket=S3_OUTPUT_BUCKET, Key=file_key)
     return json.loads(response['Body'].read().decode('utf-8'))
 
 
 def list_reports_from_s3() -> List[Dict]:
-    """List all reports from output bucket"""
+    """List all reports from reports/ folder in output bucket"""
     s3 = get_s3_client()
-    response = s3.list_objects_v2(Bucket=S3_OUTPUT_BUCKET)
+    response = s3.list_objects_v2(Bucket=S3_OUTPUT_BUCKET, Prefix='reports/')
     
     reports = []
     if 'Contents' in response:
         for obj in response['Contents']:
             if obj['Key'].endswith('.json'):
+                report_id = obj['Key'].replace('reports/', '').replace('.json', '')
+                
+                # Fetch report to get source_file info
+                try:
+                    report_obj = s3.get_object(Bucket=S3_OUTPUT_BUCKET, Key=obj['Key'])
+                    report_data = json.loads(report_obj['Body'].read().decode('utf-8'))
+                    source_file = report_data.get('source_file', 'Unknown')
+                except:
+                    source_file = 'Unknown'
+                
                 reports.append({
-                    'id': obj['Key'].replace('.json', ''),
-                    'last_modified': obj['LastModified'].isoformat()
+                    'id': report_id,
+                    'created_at': obj['LastModified'].isoformat(),
+                    'source': 's3',
+                    'source_file': source_file
                 })
-    return sorted(reports, key=lambda x: x['last_modified'], reverse=True)
+    return sorted(reports, key=lambda x: x['created_at'], reverse=True)
 
 
 def delete_file_from_s3(bucket: str, file_key: str):

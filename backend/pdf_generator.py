@@ -29,6 +29,12 @@ def generate_pdf_report(report_id, transcript, report_data, model_id=None):
     
     # Metadata
     meta_style = styles['Normal']
+    
+    # Get source file from report_data if available
+    source_file = report_data.get('source_file')
+    if source_file:
+        story.append(Paragraph(f"<b>Source File:</b> {source_file}", meta_style))
+    
     story.append(Paragraph(f"<b>Report ID:</b> {report_id}", meta_style))
     story.append(Paragraph(f"<b>Generated:</b> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC", meta_style))
     if model_id:
@@ -64,13 +70,20 @@ def generate_pdf_report(report_id, transcript, report_data, model_id=None):
         elif status == 'No':
             status_display = "✗ No"
         else:
-            status_display = "⚠ Not Sure"
+            status_display = "Not Sure"
         
         item_text = Paragraph(item['item'], item_style)
         
         evidence = item.get('evidence', '')
+        timestamp = item.get('timestamp')
+        
         if evidence:
-            evidence_para = Paragraph(evidence, evidence_style)
+            # Include timestamp in evidence if available
+            if timestamp:
+                evidence_text = f"[{timestamp}] {evidence}"
+            else:
+                evidence_text = evidence
+            evidence_para = Paragraph(evidence_text, evidence_style)
         else:
             evidence_para = Paragraph("-", evidence_style)
         
