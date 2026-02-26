@@ -213,26 +213,22 @@ export default function Analyze() {
           </div>
 
           {/* Summary Statistics */}
-          <div className="card mb-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-6">
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-green-600">{getStats().yesCount}</div>
-                  <div className="text-xs text-gray-500 uppercase">Yes</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-red-600">{getStats().noCount}</div>
-                  <div className="text-xs text-gray-500 uppercase">No</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-yellow-600">{getStats().notSureCount}</div>
-                  <div className="text-xs text-gray-500 uppercase">Not Sure</div>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-4xl font-bold text-primary-600">{getStats().score}%</div>
-                <div className="text-sm text-gray-500">Overall Score</div>
-              </div>
+          <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="card text-center bg-emerald-50">
+              <div className="text-3xl font-bold text-emerald-600 mb-1">{getStats().yesCount}</div>
+              <div className="text-sm font-medium text-emerald-700">✓ Completed</div>
+            </div>
+            <div className="card text-center bg-rose-50">
+              <div className="text-3xl font-bold text-rose-600 mb-1">{getStats().noCount}</div>
+              <div className="text-sm font-medium text-rose-700">✗ Issues</div>
+            </div>
+            <div className="card text-center bg-amber-50">
+              <div className="text-3xl font-bold text-amber-700 mb-1">{getStats().notSureCount}</div>
+              <div className="text-sm font-medium text-amber-800">⚠ Needs Review</div>
+            </div>
+            <div className="card text-center bg-primary-50">
+              <div className="text-3xl font-bold text-primary-600 mb-1">{getStats().score}%</div>
+              <div className="text-sm font-medium text-primary-700">Overall Score</div>
             </div>
           </div>
 
