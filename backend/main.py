@@ -140,7 +140,10 @@ async def analyze_transcript_endpoint(
         try:
             yield f"data: {{\"status\": \"analyzing\", \"message\": \"Analyzing transcript with AI...\"}}\n\n"
             
-            report_id = str(uuid.uuid4())
+            # Generate report ID from filename and timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename_base = Path(source_filename).stem if source_filename else 'transcript'
+            report_id = f"{filename_base}_{timestamp}"
             report_text = await analyze_transcript_with_bedrock(transcript_text, model_id)
             
             yield f"data: {{\"status\": \"processing\", \"message\": \"Parsing AI evaluation results...\"}}\n\n"
@@ -318,8 +321,9 @@ async def upload_and_analyze_audio(
             
             yield f"data: {{\"status\": \"analyzing\", \"message\": \"Analyzing transcript with AI...\"}}\n\n"
             
-            # Analyze transcript (single report)
-            report_id = str(uuid.uuid4())
+            # Generate report ID from filename and timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            report_id = f"{original_filename}_{timestamp}"
             report_text = await analyze_transcript_with_bedrock(transcript, model_id)
             
             # Parse and clean the report
