@@ -3,6 +3,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorMessage from '../components/ErrorMessage';
 import AudioRecorder from '../components/AudioRecorder';
 import ConfirmDialog from '../components/ConfirmDialog';
+import ToggleSwitch from '../components/ToggleSwitch';
 import { analyzeTranscript, getReport } from '../api/client';
 import type { OSCEReport } from '../types';
 
@@ -26,6 +27,7 @@ export default function Analyze() {
   const [highlightedRange, setHighlightedRange] = useState<{start: string, end: string} | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'issues' | 'review'>('all');
   const [hasChanges, setHasChanges] = useState(false);
+  const [reviewMode, setReviewMode] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     itemIndex: number;
@@ -249,47 +251,56 @@ export default function Analyze() {
             </div>
             
             {/* Filter Buttons */}
-            <div className="flex space-x-2 mb-4">
-              <button
-                onClick={() => setStatusFilter('all')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  statusFilter === 'all'
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Show All ({checklist.length})
-              </button>
-              <button
-                onClick={() => setStatusFilter('completed')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  statusFilter === 'completed'
-                    ? 'bg-green-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Completed ({getStats().yesCount})
-              </button>
-              <button
-                onClick={() => setStatusFilter('issues')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  statusFilter === 'issues'
-                    ? 'bg-red-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Issues ({getStats().noCount})
-              </button>
-              <button
-                onClick={() => setStatusFilter('review')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  statusFilter === 'review'
-                    ? 'bg-yellow-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Needs Review ({getStats().notSureCount})
-              </button>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    statusFilter === 'all'
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Show All ({checklist.length})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('completed')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    statusFilter === 'completed'
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Completed ({getStats().yesCount})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('issues')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    statusFilter === 'issues'
+                      ? 'bg-red-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Issues ({getStats().noCount})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('review')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    statusFilter === 'review'
+                      ? 'bg-yellow-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Needs Review ({getStats().notSureCount})
+                </button>
+              </div>
+              
+              {/* Review Mode Toggle */}
+              <ToggleSwitch
+                checked={reviewMode}
+                onChange={setReviewMode}
+                label={reviewMode ? '✓ Review Mode Active' : 'Enable Review Mode'}
+              />
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
@@ -324,22 +335,24 @@ export default function Analyze() {
                             <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
                               ⚠ Not Sure
                             </span>
-                            <div className="flex space-x-1">
-                              <button
-                                onClick={() => handleStatusChange(originalIdx, 'Yes')}
-                                className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
-                                title="Mark as Yes"
-                              >
-                                ✓
-                              </button>
-                              <button
-                                onClick={() => handleStatusChange(originalIdx, 'No')}
-                                className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
-                                title="Mark as No"
-                              >
-                                ✗
-                              </button>
-                            </div>
+                            {reviewMode && (
+                              <div className="flex space-x-1">
+                                <button
+                                  onClick={() => handleStatusChange(originalIdx, 'Yes')}
+                                  className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+                                  title="Mark as Yes"
+                                >
+                                  ✓
+                                </button>
+                                <button
+                                  onClick={() => handleStatusChange(originalIdx, 'No')}
+                                  className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                                  title="Mark as No"
+                                >
+                                  ✗
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </td>
