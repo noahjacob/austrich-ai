@@ -22,6 +22,7 @@ export default function Report() {
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [highlightedTimestamp, setHighlightedTimestamp] = useState<string | null>(null);
   const [highlightedRange, setHighlightedRange] = useState<{start: string, end: string} | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'issues' | 'review'>('all');
 
   useEffect(() => {
     if (!id) {
@@ -117,6 +118,45 @@ export default function Report() {
     setHighlightedRange(null);
   };
 
+  const getStats = () => {
+    const yesCount = checklist.filter(item => item.status === 'Yes').length;
+    const noCount = checklist.filter(item => item.status === 'No').length;
+    const notSureCount = checklist.filter(item => item.status === 'Not Sure').length;
+    const score = checklist.length > 0 ? Math.round((yesCount / checklist.length) * 100) : 0;
+    return { yesCount, noCount, notSureCount, score };
+  };
+
+  const getFilteredChecklist = () => {
+    if (statusFilter === 'completed') return checklist.filter(item => item.status === 'Yes');
+    if (statusFilter === 'issues') return checklist.filter(item => item.status === 'No');
+    if (statusFilter === 'review') return checklist.filter(item => item.status === 'Not Sure');
+    return checklist;
+  };
+
+  const exportToCSV = () => {
+    const headers = ['#', 'Item', 'Status', 'Evidence', 'Timestamp'];
+    const rows = checklist.map((item, idx) => [
+      idx + 1,
+      item.item.replace(/\s*\([^)]*\)/g, ''),
+      item.status,
+      item.evidence || '-',
+      item.timestamp || '-'
+    ]);
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `osce-report-${report?.id || 'export'}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 py-12">
@@ -162,17 +202,90 @@ export default function Report() {
         {/* If text report exists, display it as markdown */}
         {report.report ? (
           <>
+            {/* Summary Statistics */}
+            <div className="card mb-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-6">
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-green-600">{getStats().yesCount}</div>
+                    <div className="text-xs text-gray-500 uppercase">Yes</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-red-600">{getStats().noCount}</div>
+                    <div className="text-xs text-gray-500 uppercase">No</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-yellow-600">{getStats().notSureCount}</div>
+                    <div className="text-xs text-gray-500 uppercase">Not Sure</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-4xl font-bold text-primary-600">{getStats().score}%</div>
+                  <div className="text-sm text-gray-500">Overall Score</div>
+                </div>
+              </div>
+            </div>
+
             {/* Checklist Table */}
             <div className="card mb-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-semibold text-gray-900">Critical Data Gathering & Exam Checklist</h2>
-                <a
-                  href={`http://localhost:8000/reports/${report.id}/pdf`}
-                  download
-                  className="btn-primary"
+                <div className="flex space-x-2">
+                  <button onClick={exportToCSV} className="btn-secondary">
+                    Export CSV
+                  </button>
+                  <a
+                    href={`http://localhost:8000/reports/${report.id}/pdf`}
+                    download
+                    className="btn-primary"
+                  >
+                    Download PDF
+                  </a>
+                </div>
+              </div>
+              
+              {/* Filter Buttons */}
+              <div className="flex space-x-2 mb-4">
+                <button
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    statusFilter === 'all'
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
                 >
-                  Download PDF Report
-                </a>
+                  Show All ({checklist.length})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('completed')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    statusFilter === 'completed'
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Completed ({getStats().yesCount})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('issues')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    statusFilter === 'issues'
+                      ? 'bg-red-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Issues ({getStats().noCount})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('review')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    statusFilter === 'review'
+                      ? 'bg-yellow-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Needs Review ({getStats().notSureCount})
+                </button>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
@@ -193,10 +306,12 @@ export default function Report() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {checklist.map((item, idx) => (
-                      <tr key={idx} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                    {getFilteredChecklist().map((item) => {
+                      const originalIdx = checklist.indexOf(item);
+                      return (
+                      <tr key={originalIdx} className={originalIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {idx + 1}
+                          {originalIdx + 1}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-900">
                           {item.item.replace(/\s*\([^)]*\)/g, '')}
@@ -237,7 +352,8 @@ export default function Report() {
                           )}
                         </td>
                       </tr>
-                    ))}
+                    );
+                    })}
                   </tbody>
                 </table>
               </div>

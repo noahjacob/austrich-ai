@@ -143,7 +143,7 @@ async def analyze_transcript_endpoint(
             report_id = str(uuid.uuid4())
             report_text = await analyze_transcript_with_bedrock(transcript_text, model_id)
             
-            yield f"data: {{\"status\": \"processing\", \"message\": \"Processing results...\"}}\n\n"
+            yield f"data: {{\"status\": \"processing\", \"message\": \"Parsing AI evaluation results...\"}}\n\n"
             
             # Parse JSON response
             try:
@@ -281,7 +281,7 @@ async def upload_and_analyze_audio(
                 yield f"data: {{\"status\": \"error\", \"message\": \"Invalid audio format\"}}\n\n"
                 return
             
-            yield f"data: {{\"status\": \"uploading\", \"message\": \"Uploading audio file...\"}}\n\n"
+            yield f"data: {{\"status\": \"uploading\", \"message\": \"Step 1/4: Uploading audio file to S3...\"}}\n\n"
             
             s3 = get_s3_client()
             audio_key = f"audio/{uuid.uuid4()}{file_ext}"
@@ -291,14 +291,14 @@ async def upload_and_analyze_audio(
             s3.put_object(Bucket=S3_INPUT_BUCKET, Key=audio_key, Body=file_content)
             print(f"Audio uploaded successfully")
             
-            yield f"data: {{\"status\": \"transcribing\", \"message\": \"Transcribing audio (this may take a few minutes)...\"}}\n\n"
+            yield f"data: {{\"status\": \"transcribing\", \"message\": \"Step 2/4: Transcribing audio with AWS Transcribe (2-3 minutes)...\"}}\n\n"
             
             # Transcribe
             print(f"Starting transcription for {audio_key}")
             transcript = await transcribe_audio_file(audio_key)
             print(f"Transcription completed, length: {len(transcript)} chars")
             
-            yield f"data: {{\"status\": \"saving\", \"message\": \"Saving transcript...\"}}\n\n"
+            yield f"data: {{\"status\": \"saving\", \"message\": \"Step 3/4: Saving transcript to S3...\"}}\n\n"
             
             # Save transcript with original audio filename
             original_filename = filename_stem if filename_stem else 'recording'

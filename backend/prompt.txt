@@ -24,6 +24,9 @@ You are evaluating an OSCE (Objective Structured Clinical Examination) transcrip
 19. Checks/mentions checking arms and legs for strength
 20. Checks/mentions checking for reflexes
 
+## Evaluation Principle:
+Evaluate based on whether the INFORMATION was obtained or the ACTION was performed, NOT based on specific words or phrases used. Students may use different medical terminology, colloquial language, or indirect questions - all are acceptable if they successfully obtain the required information or perform the required examination. Focus on the SUBSTANCE of the interaction, not the FORM.
+
 ## Important Notes:
 - For items 1-10 (history questions): Mark as "Yes" if the information was obtained - either by the student asking OR by the patient volunteering the information. If the patient already provided the information earlier in the conversation, the student does not need to ask again.
 - For items 11-20 (physical exam): Since this is a transcript, look for the student SAYING they are performing the action (e.g., "I'm going to check your blood pressure", "Let me listen to your lungs", "I'm checking your reflexes")
