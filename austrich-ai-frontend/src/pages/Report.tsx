@@ -4,6 +4,7 @@ import { getReport } from '../api/client';
 import type { OSCEReport } from '../types';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorMessage from '../components/ErrorMessage';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 interface ChecklistItem {
   item: string;
@@ -23,6 +24,12 @@ export default function Report() {
   const [highlightedTimestamp, setHighlightedTimestamp] = useState<string | null>(null);
   const [highlightedRange, setHighlightedRange] = useState<{start: string, end: string} | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'issues' | 'review'>('all');
+  const [hasChanges, setHasChanges] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    itemIndex: number;
+    newStatus: 'Yes' | 'No';
+  }>({ isOpen: false, itemIndex: -1, newStatus: 'Yes' });
 
   useEffect(() => {
     if (!id) {
@@ -157,6 +164,25 @@ export default function Report() {
     URL.revokeObjectURL(url);
   };
 
+  const handleStatusChange = (index: number, newStatus: 'Yes' | 'No') => {
+    const item = checklist[index];
+    if (item.status !== 'Not Sure') return;
+    setConfirmDialog({ isOpen: true, itemIndex: index, newStatus });
+  };
+
+  const confirmStatusChange = () => {
+    const { itemIndex, newStatus } = confirmDialog;
+    const updated = [...checklist];
+    updated[itemIndex] = { ...updated[itemIndex], status: newStatus };
+    setChecklist(updated);
+    setHasChanges(true);
+    setConfirmDialog({ isOpen: false, itemIndex: -1, newStatus: 'Yes' });
+  };
+
+  const cancelStatusChange = () => {
+    setConfirmDialog({ isOpen: false, itemIndex: -1, newStatus: 'Yes' });
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 py-12">
@@ -197,6 +223,11 @@ export default function Report() {
           <p className="text-gray-600 mt-2">
             Report ID: {report.id} • Created: {new Date(report.created_at).toLocaleString()}
           </p>
+          {hasChanges && (
+            <p className="text-sm text-orange-600 mt-1 font-medium">
+              ⚠ You have unsaved manual changes
+            </p>
+          )}
         </div>
 
         {/* If text report exists, display it as markdown */}
@@ -328,9 +359,27 @@ export default function Report() {
                             </span>
                           )}
                           {item.status === 'Not Sure' && (
-                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
-                              ⚠ Not Sure
-                            </span>
+                            <div className="flex items-center justify-center space-x-2">
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+                                ⚠ Not Sure
+                              </span>
+                              <div className="flex space-x-1">
+                                <button
+                                  onClick={() => handleStatusChange(originalIdx, 'Yes')}
+                                  className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+                                  title="Mark as Yes"
+                                >
+                                  ✓
+                                </button>
+                                <button
+                                  onClick={() => handleStatusChange(originalIdx, 'No')}
+                                  className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                                  title="Mark as No"
+                                >
+                                  ✗
+                                </button>
+                              </div>
+                            </div>
                           )}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-700">
@@ -574,6 +623,16 @@ export default function Report() {
         </>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title="Confirm Status Change"
+        message={`Change status from "Not Sure" to "${confirmDialog.newStatus}" for item #${confirmDialog.itemIndex + 1}?\n\nThis will mark the item as manually reviewed.`}
+        onConfirm={confirmStatusChange}
+        onCancel={cancelStatusChange}
+        confirmText={`Mark as ${confirmDialog.newStatus}`}
+        confirmColor={confirmDialog.newStatus === 'Yes' ? 'green' : 'red'}
+      />
     </div>
   );
 }

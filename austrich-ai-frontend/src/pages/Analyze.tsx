@@ -2,6 +2,7 @@ import { useState } from 'react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorMessage from '../components/ErrorMessage';
 import AudioRecorder from '../components/AudioRecorder';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { analyzeTranscript, getReport } from '../api/client';
 import type { OSCEReport } from '../types';
 
@@ -24,6 +25,12 @@ export default function Analyze() {
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [highlightedRange, setHighlightedRange] = useState<{start: string, end: string} | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'issues' | 'review'>('all');
+  const [hasChanges, setHasChanges] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    itemIndex: number;
+    newStatus: 'Yes' | 'No';
+  }>({ isOpen: false, itemIndex: -1, newStatus: 'Yes' });
 
   const models = [
     { id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', name: 'Claude 4.5 Haiku' },
@@ -160,6 +167,25 @@ export default function Analyze() {
     URL.revokeObjectURL(url);
   };
 
+  const handleStatusChange = (index: number, newStatus: 'Yes' | 'No') => {
+    const item = checklist[index];
+    if (item.status !== 'Not Sure') return;
+    setConfirmDialog({ isOpen: true, itemIndex: index, newStatus });
+  };
+
+  const confirmStatusChange = () => {
+    const { itemIndex, newStatus } = confirmDialog;
+    const updated = [...checklist];
+    updated[itemIndex] = { ...updated[itemIndex], status: newStatus };
+    setChecklist(updated);
+    setHasChanges(true);
+    setConfirmDialog({ isOpen: false, itemIndex: -1, newStatus: 'Yes' });
+  };
+
+  const cancelStatusChange = () => {
+    setConfirmDialog({ isOpen: false, itemIndex: -1, newStatus: 'Yes' });
+  };
+
   if (report) {
     return (
       <div className="min-h-screen bg-gray-50 py-8">
@@ -173,6 +199,11 @@ export default function Analyze() {
               <p className="text-sm text-gray-500 mt-1">
                 Report ID: {report.id} • Created: {new Date(report.created_at).toLocaleString()}
               </p>
+              {hasChanges && (
+                <p className="text-sm text-orange-600 mt-1 font-medium">
+                  ⚠ You have unsaved manual changes
+                </p>
+              )}
             </div>
             <button onClick={resetAnalysis} className="btn-secondary">
               ← New Analysis
@@ -289,9 +320,27 @@ export default function Analyze() {
                           </span>
                         )}
                         {item.status === 'Not Sure' && (
-                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
-                            ⚠ Not Sure
-                          </span>
+                          <div className="flex items-center justify-center space-x-2">
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+                              ⚠ Not Sure
+                            </span>
+                            <div className="flex space-x-1">
+                              <button
+                                onClick={() => handleStatusChange(originalIdx, 'Yes')}
+                                className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+                                title="Mark as Yes"
+                              >
+                                ✓
+                              </button>
+                              <button
+                                onClick={() => handleStatusChange(originalIdx, 'No')}
+                                className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                                title="Mark as No"
+                              >
+                                ✗
+                              </button>
+                            </div>
+                          </div>
                         )}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-700">
@@ -449,6 +498,16 @@ export default function Analyze() {
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title="Confirm Status Change"
+        message={`Change status from "Not Sure" to "${confirmDialog.newStatus}" for item #${confirmDialog.itemIndex + 1}?\n\nThis will mark the item as manually reviewed.`}
+        onConfirm={confirmStatusChange}
+        onCancel={cancelStatusChange}
+        confirmText={`Mark as ${confirmDialog.newStatus}`}
+        confirmColor={confirmDialog.newStatus === 'Yes' ? 'green' : 'red'}
+      />
     </div>
   );
 }
