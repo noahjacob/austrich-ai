@@ -87,5 +87,6 @@ IMPORTANT
 - If the grade is "Not Sure", evidence should usually be null.
 - Timestamps must exactly match transcript formatting.
 - Do not include reasoning outside the specified fields.
+- Make sure there is only 1 entry per question, so do not make any repetitions. 
 
 Now produce the JSON output.

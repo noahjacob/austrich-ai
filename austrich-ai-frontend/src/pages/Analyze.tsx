@@ -17,7 +17,7 @@ export default function Analyze() {
   const [transcript, setTranscript] = useState('');
   const [transcriptSource, setTranscriptSource] = useState<'manual' | 's3'>('manual');
   const [s3Files, setS3Files] = useState<Array<{ key: string; size: number; last_modified: string }>>([]);
-  const [selectedS3File, setSelectedS3File] = useState<string>('');
+  const [selectedS3Files, setSelectedS3Files] = useState<string[]>([]);
   const [loadingS3Files, setLoadingS3Files] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -61,15 +61,27 @@ export default function Analyze() {
 
   const handleDeleteS3File = async (fileKey: string) => {
     if (!confirm(`Delete ${fileKey}?`)) return;
-    
+
     try {
       await deleteS3InputFile(fileKey);
       await loadS3Files(); // Refresh list
-      if (selectedS3File === fileKey) {
-        setSelectedS3File('');
-      }
+      setSelectedS3Files(prev => prev.filter(k => k !== fileKey));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete file');
+    }
+  };
+
+  const toggleS3FileSelection = (fileKey: string) => {
+    setSelectedS3Files(prev =>
+      prev.includes(fileKey) ? prev.filter(k => k !== fileKey) : [...prev, fileKey]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedS3Files.length === filteredFiles.length && filteredFiles.length > 0) {
+      setSelectedS3Files([]);
+    } else {
+      setSelectedS3Files(filteredFiles.map(f => f.key));
     }
   };
 
@@ -105,12 +117,12 @@ export default function Analyze() {
 
   const handleTranscriptSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (transcriptSource === 's3' && !selectedS3File) {
-      setError('Please select a file from S3');
+
+    if (transcriptSource === 's3' && selectedS3Files.length === 0) {
+      setError('Please select at least one file from S3');
       return;
     }
-    
+
     if (transcriptSource === 'manual' && !transcript.trim()) {
       setError('Please enter or upload a transcript');
       return;
@@ -121,19 +133,29 @@ export default function Analyze() {
     setBatchProgress(null);
 
     try {
-      let response;
       if (transcriptSource === 's3') {
-        response = await analyzeFromS3(
-          selectedS3File,
-          selectedModel,
-          batchCount,
-          (message) => setBatchProgress(message),
-          selectedPrompt
-        );
+        if (selectedS3Files.length === 1) {
+          const response = await analyzeFromS3(
+            selectedS3Files[0],
+            selectedModel,
+            batchCount,
+            (message) => setBatchProgress(message),
+            selectedPrompt
+          );
+          navigate(`/reports/${response.report_id}`);
+        } else {
+          setBatchProgress(`Analyzing ${selectedS3Files.length} files in parallel...`);
+          await Promise.all(
+            selectedS3Files.map(fileKey =>
+              analyzeFromS3(fileKey, selectedModel, batchCount, undefined, selectedPrompt)
+            )
+          );
+          navigate('/reports');
+        }
       } else {
-        response = await analyzeTranscript({ transcript, model_id: selectedModel, prompt_name: selectedPrompt });
+        const response = await analyzeTranscript({ transcript, model_id: selectedModel, prompt_name: selectedPrompt });
+        navigate(`/reports/${response.report_id}`);
       }
-      navigate(`/reports/${response.report_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to analyze transcript');
     } finally {
@@ -277,6 +299,23 @@ export default function Analyze() {
                                 }}
                                 className="input-field mb-3"
                               />
+                              <div className="flex items-center justify-between mb-2">
+                                <label className="flex items-center text-sm text-gray-600 cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={filteredFiles.length > 0 && selectedS3Files.length === filteredFiles.length}
+                                    ref={el => { if (el) el.indeterminate = selectedS3Files.length > 0 && selectedS3Files.length < filteredFiles.length; }}
+                                    onChange={toggleSelectAll}
+                                    className="mr-2"
+                                  />
+                                  Select All ({filteredFiles.length})
+                                </label>
+                                {selectedS3Files.length > 0 && (
+                                  <span className="text-sm text-primary-600 font-medium">
+                                    {selectedS3Files.length} selected
+                                  </span>
+                                )}
+                              </div>
                               <div className="space-y-2 mb-3 max-h-96 overflow-y-auto border rounded-lg p-3">
                                 {paginatedFiles.length === 0 ? (
                                   <p className="text-sm text-gray-500">No files match your search.</p>
@@ -285,12 +324,19 @@ export default function Analyze() {
                                     <div
                                       key={file.key}
                                       className={`flex items-center justify-between p-3 rounded border cursor-pointer hover:bg-gray-50 ${
-                                        selectedS3File === file.key ? 'border-primary-500 bg-primary-50' : 'border-gray-200'
+                                        selectedS3Files.includes(file.key) ? 'border-primary-500 bg-primary-50' : 'border-gray-200'
                                       }`}
-                                      onClick={() => setSelectedS3File(file.key)}
+                                      onClick={() => toggleS3FileSelection(file.key)}
                                     >
-                                      <div className="flex-1">
-                                        <p className="font-medium text-sm">{file.key}</p>
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedS3Files.includes(file.key)}
+                                        onChange={() => toggleS3FileSelection(file.key)}
+                                        onClick={e => e.stopPropagation()}
+                                        className="mr-3 shrink-0"
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <p className="font-medium text-sm truncate">{file.key}</p>
                                         <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
                                       </div>
                                       <button
@@ -299,7 +345,7 @@ export default function Analyze() {
                                           e.stopPropagation();
                                           handleDeleteS3File(file.key);
                                         }}
-                                        className="ml-3 text-red-600 hover:text-red-800"
+                                        className="ml-3 text-red-600 hover:text-red-800 shrink-0"
                                         title="Delete file"
                                       >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -405,10 +451,12 @@ export default function Analyze() {
 
                   <button
                     type="submit"
-                    disabled={loading || (transcriptSource === 'manual' ? !transcript.trim() : !selectedS3File)}
+                    disabled={loading || (transcriptSource === 'manual' ? !transcript.trim() : selectedS3Files.length === 0)}
                     className="btn-primary w-full sm:w-auto"
                   >
-                    Analyze Transcript
+                    {transcriptSource === 's3' && selectedS3Files.length > 1
+                      ? `Analyze ${selectedS3Files.length} Files`
+                      : 'Analyze Transcript'}
                   </button>
                 </form>
               )}
