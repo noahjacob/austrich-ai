@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorMessage from '../components/ErrorMessage';
 import AudioRecorder from '../components/AudioRecorder';
@@ -21,6 +21,7 @@ export default function Analyze() {
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [selectedModel, setSelectedModel] = useState('us.anthropic.claude-haiku-4-5-20251001-v1:0');
   const [progressMessage, setProgressMessage] = useState<string>('');
+  const [elapsedTime, setElapsedTime] = useState(0);
 
   const [report, setReport] = useState<OSCEReport | null>(null);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
@@ -39,6 +40,23 @@ export default function Analyze() {
     { id: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', name: 'Claude 4.5 Sonnet' },
     { id: 'us.anthropic.claude-opus-4-6-v1', name: 'Claude 4.6 Opus' },
   ];
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (loading) {
+      setElapsedTime(0);
+      interval = setInterval(() => {
+        setElapsedTime(prev => prev + 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [loading]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   const handleRecordingComplete = (audioBlob: Blob, filename: string) => {
     const file = new File([audioBlob], filename, { type: 'audio/webm' });
@@ -429,7 +447,7 @@ export default function Analyze() {
 
           {loading ? (
             <div className="text-center py-12">
-              <LoadingSpinner />
+              <div className="text-5xl font-bold text-primary-600 mb-4">{formatTime(elapsedTime)}</div>
               {progressMessage && (
                 <p className="mt-4 text-sm text-gray-600">{progressMessage}</p>
               )}
