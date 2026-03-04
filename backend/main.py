@@ -212,30 +212,34 @@ async def get_report(report_id: str):
 
 @app.get("/reports/{report_id}/pdf")
 async def get_report_pdf(report_id: str):
-    """Download PDF report - generates on-demand if not exists"""
+    """Generate and download PDF report on-demand (not cached)"""
     try:
-        pdf_path = REPORTS_DIR / f"{report_id}.pdf"
+        # Fetch report from S3
+        report_data = get_report_from_s3(report_id)
         
-        # If PDF doesn't exist, generate it
-        if not pdf_path.exists():
-            # Fetch report from S3
-            report_data = get_report_from_s3(report_id)
-            
-            # Parse the report JSON
-            report_json = json.loads(report_data['report'])
-            
-            # Generate PDF
-            generate_pdf_report(
+        # Parse the report JSON
+        report_json = json.loads(report_data['report'])
+        
+        # Generate PDF to temp location
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='wb', suffix='.pdf', delete=False) as tmp:
+            from pdf_generator import generate_pdf_report
+            pdf_path = generate_pdf_report(
                 report_id, 
                 report_data['transcript'], 
                 report_json, 
                 report_data.get('model_id')
             )
-        
-        return FileResponse(
-            pdf_path,
+            # Read the generated PDF
+            with open(pdf_path, 'rb') as f:
+                pdf_content = f.read()
+            # Delete the local file immediately
+            Path(pdf_path).unlink()
+            
+        return StreamingResponse(
+            iter([pdf_content]),
             media_type="application/pdf",
-            filename=f"osce_report_{report_id}.pdf"
+            headers={"Content-Disposition": f"attachment; filename=osce_report_{report_id}.pdf"}
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

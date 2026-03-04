@@ -157,13 +157,42 @@ export default function Report() {
 
   const exportToCSV = () => {
     const headers = ['#', 'Item', 'Status', 'Evidence', 'Timestamp'];
-    const rows = checklist.map((item, idx) => [
-      idx + 1,
-      item.item.replace(/\s*\([^)]*\)/g, ''),
-      item.status,
-      item.evidence || '-',
-      item.timestamp || '-'
-    ]);
+    const rows: string[][] = [];
+    
+    checklist.forEach((item, idx) => {
+      if (item.has_subitems && item.subitems) {
+        // Add parent item with overall status
+        rows.push([
+          String(idx + 1),
+          item.item.replace(/\s*\([^)]*\)/g, '').replace(/\s*-\s*must ask.*$/i, ''),
+          item.overall_status || 'Not Sure',
+          item.threshold || '',
+          ''
+        ]);
+        // Add sub-items with letter notation
+        item.subitems.forEach((sub) => {
+          const match = sub.item.match(/^(\d+[a-z])\.\s*(.+)$/);
+          const subId = match ? match[1] : sub.item.substring(0, 2);
+          const subText = match ? match[2] : sub.item;
+          rows.push([
+            subId,
+            subText,
+            sub.status,
+            sub.evidence || '-',
+            sub.timestamp || '-'
+          ]);
+        });
+      } else {
+        // Regular item
+        rows.push([
+          String(idx + 1),
+          item.item.replace(/\s*\([^)]*\)/g, ''),
+          item.status || 'Not Sure',
+          item.evidence || '-',
+          item.timestamp || '-'
+        ]);
+      }
+    });
     
     const csvContent = [
       headers.join(','),
@@ -424,7 +453,7 @@ export default function Report() {
                                       {sub.status === 'Yes' ? '✓' : sub.status === 'No' ? '✗' : '⚠'}
                                     </span>
                                     <div className="flex-1">
-                                      <div className="text-xs font-medium text-gray-700">{sub.item}</div>
+                                      <div className="text-xs font-medium text-gray-700">{sub.item.replace(/^\d+[a-z]\.\s*/, '')}</div>
                                       {sub.evidence && (
                                         <p className="text-xs text-gray-600 italic mt-1">"{sub.evidence}"</p>
                                       )}
