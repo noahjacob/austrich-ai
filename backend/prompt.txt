@@ -4,25 +4,24 @@ You are evaluating an OSCE (Objective Structured Clinical Examination) transcrip
 
 ## Checklist Items:
 1. Asks about onset
-2. Asks about symptoms prior to onset - must ask at least 3 of these:
+2. Asks about symptoms prior to onset - must ask at least 3 of 5:
    a. Lightheadedness
    b. Dizziness
    c. Visual abnormalities
    d. Palpitations
    e. Chest pain
 3. Asks about estimated duration of loss of consciousness
-4. Asks about symptoms upon regaining consciousness - must ask ALL of these:
+4. Asks about symptoms upon regaining consciousness - must ask ALL 4:
    a. Loss of urine
    b. Tongue biting
    c. Feeling fine on recovery or sluggish
    d. Injury other than head
-5. Asks about recent illnesses impacting oral intake - must ask at least 4 of these:
+5. Asks about recent illnesses impacting oral intake - must ask at least 4 of 5:
    a. Eating/drinking normally
    b. Nausea
    c. Vomiting
    d. Diarrhea
-   e. Black or bloody stools
-   f. Other blood loss
+   e. Black or bloody stools - other blood loss
 6. Asks about cardiac history
 7. Asks about specific cardiac tests
 8. Asks about prior episode of syncope
@@ -49,11 +48,24 @@ Evaluate based on whether the INFORMATION was obtained or the ACTION was perform
 ## Instructions:
 For items WITH sub-items (2, 4, 5), evaluate each sub-item individually:
 - For each sub-item: status (Yes/No/Not Sure), reasoning (brief), evidence (exact quote), timestamp, timestamp_end
-- Calculate overall_status by COUNTING sub-item statuses:
-  - Item 2 (at least 3 of 5): Count Yes. If Yes >= 3 then overall_status = "Yes". If Yes < 3 but (Yes + Not Sure) >= 3 then overall_status = "Not Sure". Otherwise overall_status = "No".
-  - Item 4 (ALL 4 required): Count Yes. If Yes = 4 then overall_status = "Yes". If Yes < 4 but (Yes + Not Sure) = 4 then overall_status = "Not Sure". Otherwise overall_status = "No".
-  - Item 5 (at least 4 of 6): Count Yes. If Yes >= 4 then overall_status = "Yes". If Yes < 4 but (Yes + Not Sure) >= 4 then overall_status = "Not Sure". Otherwise overall_status = "No".
-- IMPORTANT: You MUST count the sub-item statuses and apply the logic above. Do not guess or estimate.
+- AFTER evaluating all sub-items, COUNT how many have status="Yes"
+- Calculate overall_status using ONLY the count of "Yes" statuses:
+  - Item 2 (at least 3 of 5): If Yes count >= 3 then overall_status = "Yes". If Yes count < 3 but (Yes count + Not Sure count) >= 3 then overall_status = "Not Sure". Otherwise overall_status = "No".
+  - Item 4 (ALL 4 required): If Yes count = 4 then overall_status = "Yes". If Yes count < 4 but (Yes count + Not Sure count) = 4 then overall_status = "Not Sure". Otherwise overall_status = "No".
+  - Item 5 (at least 4 of 5): If Yes count >= 4 then overall_status = "Yes". If Yes count < 4 but (Yes count + Not Sure count) >= 4 then overall_status = "Not Sure". Otherwise overall_status = "No".
+
+## MANDATORY COUNTING EXAMPLES - FOLLOW THESE EXACTLY:
+  - Item 4: Loss of urine=No, Tongue biting=Yes, Feeling fine=Yes, Injury=Not Sure
+    → Count: Yes=2, NotSure=1, No=1
+    → Yes count (2) is NOT 4, so overall_status = "No"
+  
+  - Item 5: Eating=Yes, Nausea=Yes, Vomiting=Yes, Diarrhea=No, Bloody stools=No
+    → Count: Yes=3, No=2
+    → Yes count (3) is NOT >= 4, so overall_status = "No"
+  
+  - Item 5: Eating=Yes, Nausea=Yes, Vomiting=Yes, Diarrhea=Not Sure, Bloody stools=No
+    → Count: Yes=3, NotSure=1, No=1
+    → Yes count (3) < 4 BUT Yes+NotSure (4) >= 4, so overall_status = "Not Sure"
 
 For items WITHOUT sub-items (1, 3, 6-20):
 - status (Yes/No/Not Sure), evidence (exact quote), timestamp, timestamp_end
@@ -61,7 +73,7 @@ For items WITHOUT sub-items (1, 3, 6-20):
 ## CRITICAL: Return ONLY valid JSON. No other text before or after.
 
 Format:
-{{"checklist": [{{"item": "1. Asks about onset", "has_subitems": false, "status": "Yes", "evidence": "...", "timestamp": "00:00:57", "timestamp_end": "00:01:03"}}, {{"item": "2. Asks about symptoms prior to onset", "has_subitems": true, "threshold": "at least 3", "overall_status": "Yes", "subitems": [{{"item": "2a. Lightheadedness", "status": "No", "reasoning": "Not asked", "evidence": null, "timestamp": null, "timestamp_end": null}}, {{"item": "2b. Dizziness", "status": "Yes", "reasoning": "Asked", "evidence": "Student: 'did you feel dizzy' Patient: 'No'", "timestamp": "00:01:28", "timestamp_end": "00:01:30"}}]}}]}}
+{{"checklist": [{{"item": "1. Asks about onset", "has_subitems": false, "status": "Yes", "evidence": "...", "timestamp": "00:00:57", "timestamp_end": "00:01:03"}}, {{"item": "2. Asks about symptoms prior to onset", "has_subitems": true, "threshold": "at least 3 of 5", "overall_status": "Yes", "subitems": [{{"item": "2a. Lightheadedness", "status": "No", "reasoning": "Not asked", "evidence": null, "timestamp": null, "timestamp_end": null}}, {{"item": "2b. Dizziness", "status": "Yes", "reasoning": "Asked", "evidence": "Student: 'did you feel dizzy' Patient: 'No'", "timestamp": "00:01:28", "timestamp_end": "00:01:30"}}]}}, {{"item": "4. Asks about symptoms upon regaining consciousness", "has_subitems": true, "threshold": "ALL 4 required", "overall_status": "No", "subitems": [{{"item": "4a. Loss of urine", "status": "No", "reasoning": "Not asked", "evidence": null, "timestamp": null, "timestamp_end": null}}]}}, {{"item": "5. Asks about recent illnesses impacting oral intake", "has_subitems": true, "threshold": "at least 4 of 5", "overall_status": "No", "subitems": [{{"item": "5a. Eating/drinking normally", "status": "Yes", "reasoning": "Asked", "evidence": "...", "timestamp": "00:01:48", "timestamp_end": "00:01:50"}}]}}]}}
 
 Transcript:
 {transcript}

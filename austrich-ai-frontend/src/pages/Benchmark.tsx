@@ -126,9 +126,14 @@ export default function Benchmark() {
       status: 'processing' as const
     })));
 
-    const allResults = await Promise.all(files.map(file => transcribeFile(file)));
-    setResults(allResults);
-    setProcessing(false);
+    try {
+      const allResults = await Promise.all(files.map(file => transcribeFile(file)));
+      setResults(allResults);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Transcription failed');
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const exportToCSV = () => {
@@ -169,39 +174,76 @@ export default function Benchmark() {
     transcriptFiles.forEach(file => formData.append('files', file));
     selectedModels.forEach(m => formData.append('model_ids', m));
 
-    const response = await fetch('http://localhost:8000/benchmark/analyze', {
-      method: 'POST',
-      body: formData,
-    });
+    try {
+      const response = await fetch('http://localhost:8000/benchmark/analyze', {
+        method: 'POST',
+        body: formData,
+      });
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-      setError('No response body');
-      setAnalyzing(false);
-      return;
-    }
+      const reader = response.body?.getReader();
+      if (!reader) {
+        setError('No response body');
+        setAnalyzing(false);
+        return;
+      }
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+      const allResults: AnalysisResult[] = [];
+      let isComplete = false;
 
-      const text = new TextDecoder().decode(value);
-      const lines = text.split('\n');
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          console.log('Stream ended, total results:', allResults.length);
+          break;
+        }
 
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = JSON.parse(line.slice(6));
+        const text = new TextDecoder().decode(value);
+        const lines = text.split('\n');
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
           
-          if (data.status === 'complete') {
-            setAnalysisResults(data.results);
-          } else if (data.status === 'error') {
-            setError(data.message);
+          try {
+            const data = JSON.parse(trimmed.slice(6));
+            console.log('SSE message:', data.status, data.message || '');
+            
+            if (data.status === 'data') {
+              allResults.push(...data.results);
+              setAnalysisResults([...allResults]);
+              console.log('Accumulated results:', allResults.length);
+            } else if (data.status === 'complete') {
+              isComplete = true;
+              console.log('Analysis complete!');
+            } else if (data.status === 'error') {
+              setError(data.message);
+            }
+          } catch (e) {
+            console.error('Failed to parse SSE line:', trimmed, e);
           }
         }
       }
-    }
 
-    setAnalyzing(false);
+      // Final update
+      setAnalysisResults(allResults);
+      console.log('Setting final results:', allResults.length);
+      
+      // Auto-export CSVs if analysis completed successfully
+      if (isComplete && allResults.length > 0) {
+        console.log('Auto-exporting CSVs...');
+        setTimeout(() => {
+          exportAnalysisTimesToCSV();
+          setTimeout(() => exportAnalysisToCSV(), 200);
+        }, 500);
+      }
+      
+    } catch (e) {
+      console.error('Analysis error:', e);
+      setError(e instanceof Error ? e.message : 'Analysis failed');
+    } finally {
+      console.log('Setting analyzing to false');
+      setAnalyzing(false);
+    }
   };
 
   const exportAnalysisToJSON = () => {
@@ -214,13 +256,25 @@ export default function Benchmark() {
     URL.revokeObjectURL(url);
   };
 
+  const exportAllCSVs = () => {
+    exportAnalysisTimesToCSV();
+    setTimeout(() => exportAnalysisToCSV(), 100);
+  };
+
   const exportAnalysisTimesToCSV = () => {
-    const headers = ['Filename', 'Model', 'Analysis Time (s)'];
-    const rows = analysisResults.map(r => [
-      r.transcript_key,
-      MODELS.find(m => m.id === r.model_id)?.name || r.model_id,
-      r.analysis_time.toFixed(2)
-    ]);
+    const filenames = [...new Set(analysisResults.map(r => r.transcript_key))];
+    const models = [...new Set(analysisResults.map(r => r.model_id))];
+    
+    const headers = ['Case', ...models.map(m => MODELS.find(model => model.id === m)?.name || m)];
+    
+    const rows = filenames.map(filename => {
+      const row = [filename];
+      models.forEach(modelId => {
+        const result = analysisResults.find(r => r.transcript_key === filename && r.model_id === modelId);
+        row.push(result ? result.analysis_time.toFixed(2) : '-');
+      });
+      return row;
+    });
 
     const csvContent = [
       headers.join(','),
@@ -239,11 +293,11 @@ export default function Benchmark() {
   const exportAnalysisToCSV = () => {
     if (analysisResults.length === 0) return;
 
-    // Fixed list of all checklist items
+    // Fixed list of all checklist items (32 total: 1, 2a-2e, 3, 4a-4d, 5a-5e, 6-20)
     const CHECKLIST_ITEMS = [
       '1', '2a', '2b', '2c', '2d', '2e', '3',
       '4a', '4b', '4c', '4d',
-      '5a', '5b', '5c', '5d', '5e', '5f',
+      '5a', '5b', '5c', '5d', '5e',
       '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20'
     ];
 
@@ -485,48 +539,36 @@ export default function Benchmark() {
               disabled={analyzing || transcriptFiles.length === 0 || selectedModels.length === 0}
               className="btn-primary w-full py-3 text-lg disabled:opacity-50"
             >
-              {analyzing ? 'Analyzing...' : `Analyze (${transcriptFiles.length} × ${selectedModels.length} = ${transcriptFiles.length * selectedModels.length} runs)`}
+              {analyzing ? `Analyzing... (${analysisResults.length} completed)` : `Analyze (${transcriptFiles.length} × ${selectedModels.length} = ${transcriptFiles.length * selectedModels.length} runs)`}
             </button>
           </div>
 
           {analysisResults.length > 0 && (
             <div className="mt-8">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-semibold text-gray-900">Analysis Results</h3>
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Analysis Complete ({analysisResults.length} results)
+                </h3>
                 <div className="flex space-x-2">
+                  <button onClick={exportAllCSVs} className="btn-primary text-sm">
+                    📊 Export All CSVs
+                  </button>
                   <button onClick={exportAnalysisTimesToCSV} className="btn-secondary text-sm">
                     Export Times CSV
-                  </button>
-                  <button onClick={exportAnalysisToJSON} className="btn-secondary text-sm">
-                    Export JSON
                   </button>
                   <button onClick={exportAnalysisToCSV} className="btn-secondary text-sm">
                     Export Results CSV
                   </button>
+                  <button onClick={exportAnalysisToJSON} className="btn-secondary text-sm">
+                    Export JSON
+                  </button>
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-primary-600">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase">Filename</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase">Model</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase">Time (s)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {analysisResults.map((result, idx) => (
-                      <tr key={idx} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                        <td className="px-6 py-4 text-sm text-gray-900">{result.transcript_key}</td>
-                        <td className="px-6 py-4 text-sm text-gray-900">
-                          {MODELS.find(m => m.id === result.model_id)?.name || result.model_id}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-900">{result.analysis_time.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm text-green-800">
+                  ✓ {analysisResults.length} analyses completed successfully. Click "Export All CSVs" to download both timing and results data.
+                </p>
               </div>
             </div>
           )}

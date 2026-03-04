@@ -164,6 +164,39 @@ async def analyze_transcript_endpoint(
                 
                 report_data = json.loads(cleaned_text)
                 
+                # Validate and fix overall_status for items with sub-items
+                for item in report_data.get('checklist', []):
+                    if item.get('has_subitems') and item.get('subitems'):
+                        yes_count = sum(1 for sub in item['subitems'] if sub.get('status') == 'Yes')
+                        not_sure_count = sum(1 for sub in item['subitems'] if sub.get('status') == 'Not Sure')
+                        
+                        # Item 2: at least 3 of 5
+                        if item['item'].startswith('2.'):
+                            if yes_count >= 3:
+                                item['overall_status'] = 'Yes'
+                            elif yes_count + not_sure_count >= 3:
+                                item['overall_status'] = 'Not Sure'
+                            else:
+                                item['overall_status'] = 'No'
+                        
+                        # Item 4: ALL 4 required
+                        elif item['item'].startswith('4.'):
+                            if yes_count == 4:
+                                item['overall_status'] = 'Yes'
+                            elif yes_count + not_sure_count == 4:
+                                item['overall_status'] = 'Not Sure'
+                            else:
+                                item['overall_status'] = 'No'
+                        
+                        # Item 5: at least 4 of 5
+                        elif item['item'].startswith('5.'):
+                            if yes_count >= 4:
+                                item['overall_status'] = 'Yes'
+                            elif yes_count + not_sure_count >= 4:
+                                item['overall_status'] = 'Not Sure'
+                            else:
+                                item['overall_status'] = 'No'
+                
                 # Clean timestamps in checklist items
                 for item in report_data.get('checklist', []):
                     if item.get('timestamp'):
@@ -451,15 +484,14 @@ async def benchmark_analyze(
     
     async def generate():
         try:
-            results = []
-            
             # Create all analysis tasks (transcript x model combinations)
             tasks = []
             for filename, transcript in transcripts:
                 for model_id in model_ids:
                     tasks.append((filename, model_id, transcript))
             
-            yield f"data: {{\"status\": \"analyzing\", \"message\": \"Running {len(tasks)} analyses in parallel...\"}}\n\n"
+            total = len(tasks)
+            yield f"data: {{\"status\": \"analyzing\", \"message\": \"Running {total} analyses in parallel...\"}}\n\n"
             
             # Run all analyses in parallel
             import time
@@ -482,6 +514,35 @@ async def benchmark_analyze(
                         cleaned_text = cleaned_text[start_idx:end_idx]
                     
                     report_data = json.loads(cleaned_text)
+                    
+                    # Validate and fix overall_status for items with sub-items
+                    for item in report_data.get('checklist', []):
+                        if item.get('has_subitems') and item.get('subitems'):
+                            yes_count = sum(1 for sub in item['subitems'] if sub.get('status') == 'Yes')
+                            not_sure_count = sum(1 for sub in item['subitems'] if sub.get('status') == 'Not Sure')
+                            
+                            if item['item'].startswith('2.'):
+                                if yes_count >= 3:
+                                    item['overall_status'] = 'Yes'
+                                elif yes_count + not_sure_count >= 3:
+                                    item['overall_status'] = 'Not Sure'
+                                else:
+                                    item['overall_status'] = 'No'
+                            elif item['item'].startswith('4.'):
+                                if yes_count == 4:
+                                    item['overall_status'] = 'Yes'
+                                elif yes_count + not_sure_count == 4:
+                                    item['overall_status'] = 'Not Sure'
+                                else:
+                                    item['overall_status'] = 'No'
+                            elif item['item'].startswith('5.'):
+                                if yes_count >= 4:
+                                    item['overall_status'] = 'Yes'
+                                elif yes_count + not_sure_count >= 4:
+                                    item['overall_status'] = 'Not Sure'
+                                else:
+                                    item['overall_status'] = 'No'
+                    
                     checklist = report_data.get('checklist', [])
                 except:
                     checklist = []
@@ -495,7 +556,14 @@ async def benchmark_analyze(
             
             results = await asyncio.gather(*[analyze_one(fn, mid, t) for fn, mid, t in tasks])
             
-            yield f"data: {{\"status\": \"complete\", \"results\": {json.dumps(results)}, \"message\": \"Analysis completed\"}}\n\n"
+            # Send results count instead of full payload
+            yield f"data: {{\"status\": \"complete\", \"count\": {len(results)}, \"message\": \"Analysis completed\"}}\n\n"
+            
+            # Send results in chunks to avoid SSE size limits
+            chunk_size = 5
+            for i in range(0, len(results), chunk_size):
+                chunk = results[i:i+chunk_size]
+                yield f"data: {{\"status\": \"data\", \"results\": {json.dumps(chunk)}}}\n\n"
         
         except Exception as e:
             error_msg = str(e).replace('"', '\\"').replace('\n', ' ')
