@@ -72,7 +72,7 @@ def _call_bedrock_sync(transcript: str, model_id: str) -> str:
     
     # Extract the response text
     result = response['output']['message']['content'][0]['text']
-    print(f"DEBUG: LLM Response (first 500 chars): {result[:500]}")
+    print(f"DEBUG: LLM Response (first 1000 chars): {result[:1000]}")
     return result
 
 
@@ -94,5 +94,9 @@ async def analyze_transcript_with_bedrock(transcript: str, model_id: str = None)
         return report_text
     
     except Exception as e:
+        print(f"DEBUG: Full error type: {type(e).__name__}")
         print(f"DEBUG: Full error: {e}")
-        raise Exception(f"Error calling Bedrock API: {str(e)}")
+        print(f"DEBUG: Error args: {e.args}")
+        if hasattr(e, 'response'):
+            print(f"DEBUG: Error response: {e.response}")
+        raise Exception(f"Error calling Bedrock API: {repr(e)}")

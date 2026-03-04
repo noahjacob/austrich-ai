@@ -58,7 +58,10 @@ export async function analyzeTranscript(
           
           for (const line of lines) {
             if (line.startsWith('data: ')) {
-              const eventData = JSON.parse(line.slice(6));
+              const jsonStr = line.slice(6).trim();
+              if (!jsonStr) continue;
+              
+              const eventData = JSON.parse(jsonStr);
               
               // Call progress callback
               if (onProgress && eventData.message) {
@@ -118,7 +121,10 @@ export async function analyzeTranscript(
       
       for (const line of lines) {
         if (line.startsWith('data: ')) {
-          const eventData = JSON.parse(line.slice(6));
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+          
+          const eventData = JSON.parse(jsonStr);
           
           // Call progress callback
           if (onProgress && eventData.message) {
@@ -197,7 +203,10 @@ export async function analyzeFromS3(
 
       for (const line of lines) {
         if (line.startsWith('data: ')) {
-          const data = JSON.parse(line.slice(6));
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+          
+          const data = JSON.parse(jsonStr);
           
           if (data.status === 'processing' && onProgress) {
             onProgress(data.message);

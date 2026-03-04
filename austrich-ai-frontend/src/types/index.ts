@@ -1,8 +1,28 @@
 // API Response Types
 
+export interface SubItem {
+  item: string;
+  status: 'Yes' | 'No' | 'Not Sure';
+  reasoning: string;
+  evidence: string | null;
+  timestamp: string | null;
+  timestamp_end?: string | null;
+}
+
 export interface ChecklistItem {
   item: string;
-  completed: boolean;
+  has_subitems: boolean;
+  // For items without sub-items
+  status?: 'Yes' | 'No' | 'Not Sure';
+  evidence?: string | null;
+  timestamp?: string | null;
+  timestamp_end?: string | null;
+  // For items with sub-items
+  threshold?: string;
+  overall_status?: 'Yes' | 'No' | 'Not Sure';
+  subitems?: SubItem[];
+  // Legacy fields
+  completed?: boolean;
   notes?: string;
 }
 

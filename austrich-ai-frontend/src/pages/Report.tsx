@@ -7,11 +7,24 @@ import ErrorMessage from '../components/ErrorMessage';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ToggleSwitch from '../components/ToggleSwitch';
 
-interface ChecklistItem {
+interface SubItem {
   item: string;
   status: 'Yes' | 'No' | 'Not Sure';
+  reasoning: string;
   evidence: string | null;
   timestamp: string | null;
+  timestamp_end: string | null;
+}
+
+interface ChecklistItem {
+  item: string;
+  has_subitems?: boolean;
+  status?: 'Yes' | 'No' | 'Not Sure';
+  overall_status?: 'Yes' | 'No' | 'Not Sure';
+  threshold?: string;
+  subitems?: SubItem[];
+  evidence?: string | null;
+  timestamp?: string | null;
   timestamp_end?: string | null;
 }
 
@@ -128,17 +141,17 @@ export default function Report() {
   };
 
   const getStats = () => {
-    const yesCount = checklist.filter(item => item.status === 'Yes').length;
-    const noCount = checklist.filter(item => item.status === 'No').length;
-    const notSureCount = checklist.filter(item => item.status === 'Not Sure').length;
+    const yesCount = checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'Yes').length;
+    const noCount = checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'No').length;
+    const notSureCount = checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'Not Sure').length;
     const score = checklist.length > 0 ? Math.round((yesCount / checklist.length) * 100) : 0;
     return { yesCount, noCount, notSureCount, score };
   };
 
   const getFilteredChecklist = () => {
-    if (statusFilter === 'completed') return checklist.filter(item => item.status === 'Yes');
-    if (statusFilter === 'issues') return checklist.filter(item => item.status === 'No');
-    if (statusFilter === 'review') return checklist.filter(item => item.status === 'Not Sure');
+    if (statusFilter === 'completed') return checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'Yes');
+    if (statusFilter === 'issues') return checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'No');
+    if (statusFilter === 'review') return checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'Not Sure');
     return checklist;
   };
 
@@ -168,14 +181,19 @@ export default function Report() {
 
   const handleStatusChange = (index: number, newStatus: 'Yes' | 'No') => {
     const item = checklist[index];
-    if (item.status !== 'Not Sure') return;
+    const itemStatus = item.has_subitems ? item.overall_status : item.status;
+    if (itemStatus !== 'Not Sure') return;
     setConfirmDialog({ isOpen: true, itemIndex: index, newStatus });
   };
 
   const confirmStatusChange = () => {
     const { itemIndex, newStatus } = confirmDialog;
     const updated = [...checklist];
-    updated[itemIndex] = { ...updated[itemIndex], status: newStatus };
+    if (updated[itemIndex].has_subitems) {
+      updated[itemIndex] = { ...updated[itemIndex], overall_status: newStatus };
+    } else {
+      updated[itemIndex] = { ...updated[itemIndex], status: newStatus };
+    }
     setChecklist(updated);
     setHasChanges(true);
     setConfirmDialog({ isOpen: false, itemIndex: -1, newStatus: 'Yes' });
@@ -346,6 +364,7 @@ export default function Report() {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {getFilteredChecklist().map((item) => {
                       const originalIdx = checklist.indexOf(item);
+                      const itemStatus = item.has_subitems ? item.overall_status : item.status;
                       return (
                       <tr key={originalIdx} className={originalIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -355,17 +374,17 @@ export default function Report() {
                           {item.item.replace(/\s*\([^)]*\)/g, '')}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
-                          {item.status === 'Yes' && (
+                          {itemStatus === 'Yes' && (
                             <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
                               ✓ Yes
                             </span>
                           )}
-                          {item.status === 'No' && (
+                          {itemStatus === 'No' && (
                             <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
                               ✗ No
                             </span>
                           )}
-                          {item.status === 'Not Sure' && (
+                          {itemStatus === 'Not Sure' && (
                             <div className="flex items-center justify-center space-x-2">
                               <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
                                 ⚠ Not Sure
@@ -392,7 +411,37 @@ export default function Report() {
                           )}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-700">
-                          {item.evidence ? (
+                          {item.has_subitems && item.subitems ? (
+                            <div className="space-y-2">
+                              <div className="text-xs text-gray-500 font-medium">{item.threshold}</div>
+                              {item.subitems.map((sub, idx) => (
+                                <div key={idx} className="pl-3 border-l-2 border-gray-300">
+                                  <div className="flex items-start gap-2">
+                                    <span className={`text-xs font-medium ${
+                                      sub.status === 'Yes' ? 'text-green-600' : 
+                                      sub.status === 'No' ? 'text-red-600' : 'text-yellow-600'
+                                    }`}>
+                                      {sub.status === 'Yes' ? '✓' : sub.status === 'No' ? '✗' : '⚠'}
+                                    </span>
+                                    <div className="flex-1">
+                                      <div className="text-xs font-medium text-gray-700">{sub.item}</div>
+                                      {sub.evidence && (
+                                        <p className="text-xs text-gray-600 italic mt-1">"{sub.evidence}"</p>
+                                      )}
+                                      {sub.timestamp && (
+                                        <button
+                                          onClick={() => scrollToTimestamp(sub.timestamp!, sub.timestamp_end)}
+                                          className="text-xs text-primary-600 hover:text-primary-800 mt-1 underline"
+                                        >
+                                          {sub.timestamp}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : item.evidence ? (
                             <div>
                               <p className="italic">"{item.evidence}"</p>
                               {item.timestamp && (

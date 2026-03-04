@@ -164,15 +164,26 @@ async def analyze_transcript_endpoint(
                 
                 report_data = json.loads(cleaned_text)
                 
-                # Clean timestamps
+                # Clean timestamps in checklist items
                 for item in report_data.get('checklist', []):
                     if item.get('timestamp'):
                         item['timestamp'] = item['timestamp'].split('.')[0].split(',')[0][:8]
                     if item.get('timestamp_end'):
                         item['timestamp_end'] = item['timestamp_end'].split('.')[0].split(',')[0][:8]
+                    # Clean timestamps in sub-items if they exist
+                    if item.get('has_subitems') and item.get('subitems'):
+                        for subitem in item['subitems']:
+                            if subitem.get('timestamp'):
+                                subitem['timestamp'] = subitem['timestamp'].split('.')[0].split(',')[0][:8]
+                            if subitem.get('timestamp_end'):
+                                subitem['timestamp_end'] = subitem['timestamp_end'].split('.')[0].split(',')[0][:8]
                         
             except json.JSONDecodeError as e:
-                yield f"data: {{\"status\": \"error\", \"message\": \"Failed to parse AI response\"}}\n\n"
+                error_msg = str(e).replace('"', '\\"').replace('\n', ' ')
+                print(f"JSON Parse Error: {str(e)}")
+                print(f"Raw response (first 500 chars): {report_text[:500]}")
+                print(f"Cleaned text (first 500 chars): {cleaned_text[:500]}")
+                yield f"data: {{\"status\": \"error\", \"message\": \"AI returned invalid JSON: {error_msg}\"}}\n\n"
                 return
             
             yield f"data: {{\"status\": \"saving\", \"message\": \"Saving report...\"}}\n\n"
@@ -183,7 +194,8 @@ async def analyze_transcript_endpoint(
             yield f"data: {{\"status\": \"complete\", \"report_id\": \"{report_id}\", \"message\": \"Analysis completed successfully\"}}\n\n"
         
         except Exception as e:
-            yield f"data: {{\"status\": \"error\", \"message\": \"{str(e)}\"}}\n\n"
+            error_msg = str(e).replace('"', '\\"').replace('\n', ' ')
+            yield f"data: {{\"status\": \"error\", \"message\": \"{error_msg}\"}}\n\n"
     
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -341,14 +353,25 @@ async def upload_and_analyze_audio(
                 
                 report_data = json.loads(cleaned_text)
                 
-                # Clean timestamps
+                # Clean timestamps in checklist items
                 for item in report_data.get('checklist', []):
                     if item.get('timestamp'):
                         item['timestamp'] = item['timestamp'].split('.')[0].split(',')[0][:8]
                     if item.get('timestamp_end'):
                         item['timestamp_end'] = item['timestamp_end'].split('.')[0].split(',')[0][:8]
+                    # Clean timestamps in sub-items if they exist
+                    if item.get('has_subitems') and item.get('subitems'):
+                        for subitem in item['subitems']:
+                            if subitem.get('timestamp'):
+                                subitem['timestamp'] = subitem['timestamp'].split('.')[0].split(',')[0][:8]
+                            if subitem.get('timestamp_end'):
+                                subitem['timestamp_end'] = subitem['timestamp_end'].split('.')[0].split(',')[0][:8]
             except json.JSONDecodeError as e:
-                yield f"data: {{\"status\": \"error\", \"message\": \"Failed to parse AI response\"}}\n\n"
+                error_msg = str(e).replace('"', '\\"').replace('\n', ' ')
+                print(f"JSON Parse Error: {str(e)}")
+                print(f"Raw response (first 500 chars): {report_text[:500]}")
+                print(f"Cleaned text (first 500 chars): {cleaned_text[:500]}")
+                yield f"data: {{\"status\": \"error\", \"message\": \"AI returned invalid JSON: {error_msg}\"}}\n\n"
                 return
             
             # Save to S3 reports/ folder with original audio filename as source
@@ -358,7 +381,8 @@ async def upload_and_analyze_audio(
             yield f"data: {{\"status\": \"complete\", \"report_id\": \"{final_report_id}\", \"transcript_key\": \"{transcript_key}\", \"message\": \"Analysis completed successfully\"}}\n\n"
         
         except Exception as e:
-            yield f"data: {{\"status\": \"error\", \"message\": \"{str(e)}\"}}\n\n"
+            error_msg = str(e).replace('"', '\\"').replace('\n', ' ')
+            yield f"data: {{\"status\": \"error\", \"message\": \"{error_msg}\"}}\n\n"
     
     return StreamingResponse(generate(), media_type="text/event-stream")
 

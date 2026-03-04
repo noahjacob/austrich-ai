@@ -4,10 +4,25 @@ You are evaluating an OSCE (Objective Structured Clinical Examination) transcrip
 
 ## Checklist Items:
 1. Asks about onset
-2. Asks about symptoms prior to onset (lightheadedness, dizziness, visual abnormalities, palpitations, chest pain) - must ask at least 3 of these
+2. Asks about symptoms prior to onset - must ask at least 3 of these:
+   a. Lightheadedness
+   b. Dizziness
+   c. Visual abnormalities
+   d. Palpitations
+   e. Chest pain
 3. Asks about estimated duration of loss of consciousness
-4. Asks about symptoms upon regaining consciousness (loss of urine, tongue biting, feeling fine on recovery or sluggish, injury other than head) - must ask all 3 of these
-5. Asks about recent illnesses impacting oral intake (eating drinking normally, nausea, vomiting, diarrhea, black or bloody stools, other blood loss) - must ask at least 4 of these
+4. Asks about symptoms upon regaining consciousness - must ask ALL of these:
+   a. Loss of urine
+   b. Tongue biting
+   c. Feeling fine on recovery or sluggish
+   d. Injury other than head
+5. Asks about recent illnesses impacting oral intake - must ask at least 4 of these:
+   a. Eating/drinking normally
+   b. Nausea
+   c. Vomiting
+   d. Diarrhea
+   e. Black or bloody stools
+   f. Other blood loss
 6. Asks about cardiac history
 7. Asks about specific cardiac tests
 8. Asks about prior episode of syncope
@@ -33,46 +48,22 @@ Evaluate based on whether the INFORMATION was obtained or the ACTION was perform
 - For items requiring multiple questions (e.g., "must ask at least 3" or "must ask all 3"): COUNT the number of sub-items that were clearly addressed. If the count meets or exceeds the threshold, mark as "Yes". If some sub-items were addressed but the count is below the threshold, mark as "Not Sure" to flag for review. Only use "No" if there is no evidence of any sub-items being addressed.
 
 ## Instructions:
-For each item, determine:
-- **status**: MUST be one of exactly three values: "Yes", "No", or "Not Sure". DO NOT use any other values like "Partial" or anything else.
-  - Use "Yes" only when you have clear evidence the requirement was fully met
-  - Use "No" when you are confident the requirement was NOT met
-  - Use "Not Sure" when there is partial or ambiguous evidence (including when some but not all required sub-items were addressed)
-- **evidence**: Include BOTH the student's question/action AND the patient's response as a conversation snippet. Copy the EXACT text from the transcript. Do NOT paraphrase.
-- **timestamp**: The timestamp where the conversation exchange STARTS (format: "HH:MM:SS"). If status is "No" or if there is no evidence, set to null. For "Not Sure" with evidence, include the timestamp.
-- **timestamp_end**: The timestamp where the conversation exchange ENDS (format: "HH:MM:SS"). This allows highlighting the full exchange. If status is "No" or if there is no evidence, set to null. For "Not Sure" with evidence, include the timestamp.
+For items WITH sub-items (2, 4, 5), evaluate each sub-item individually:
+- For each sub-item: status (Yes/No/Not Sure), reasoning (brief), evidence (exact quote), timestamp, timestamp_end
+- Calculate overall_status:
+  - Item 2 (at least 3): If Yes count >= 3 = Yes, if Yes count = 1-2 = Not Sure, if Yes count = 0 = No
+  - Item 4 (ALL required): If Yes count = 4 = Yes, if Yes count = 0 = No, if Yes count = 1-3 = No (partial is failure)
+  - Item 5 (at least 4): If Yes count >= 4 = Yes, if Yes count = 1-3 = Not Sure, if Yes count = 0 = No
 
-## Evidence Format:
-When providing evidence, include the conversation exchange:
-- Copy EXACT text from transcript - do NOT paraphrase
-- Use the EXACT timestamp from the transcript line in square brackets [HH:MM:SS]
-- Good: "Student: 'Has anything like this ever happened to you before?' Patient: 'No, never.'" with timestamp from that exact line
-- Bad: "No, never." (only patient response)
-- Bad: Using approximate or nearby timestamp instead of exact one
+For items WITHOUT sub-items (1, 3, 6-20):
+- status (Yes/No/Not Sure), evidence (exact quote), timestamp, timestamp_end
 
 ## CRITICAL: Return ONLY valid JSON. No other text before or after.
 
-Example format:
-{{"checklist":[{{"item":"Asks about onset","status":"Yes","evidence":"Student: 'Was anything kind of feeling off before you blacked out?' Patient: 'No, I mean, everything was good.'","timestamp":"00:01:59","timestamp_end":"00:02:03"}},{{"item":"Asks about symptoms prior to onset","status":"No","evidence":null,"timestamp":null,"timestamp_end":null}}]}}
+Format:
+{{"checklist": [{{"item": "1. Asks about onset", "has_subitems": false, "status": "Yes", "evidence": "...", "timestamp": "00:00:57", "timestamp_end": "00:01:03"}}, {{"item": "2. Asks about symptoms prior to onset", "has_subitems": true, "threshold": "at least 3", "overall_status": "Yes", "subitems": [{{"item": "2a. Lightheadedness", "status": "No", "reasoning": "Not asked", "evidence": null, "timestamp": null, "timestamp_end": null}}, {{"item": "2b. Dizziness", "status": "Yes", "reasoning": "Asked", "evidence": "Student: 'did you feel dizzy' Patient: 'No'", "timestamp": "00:01:28", "timestamp_end": "00:01:30"}}]}}]}}
 
 Transcript:
 {transcript}
 
----
-
-Now evaluate each item systematically. For items with multiple sub-requirements, explicitly count what you found:
-
-Item #2: "Asks about symptoms prior to onset (lightheadedness, dizziness, visual abnormalities, palpitations, chest pain) - must ask at least 3"
-- Search the transcript for: lightheadedness, dizziness, visual abnormalities, palpitations, chest pain
-- Count how many were addressed
-- If count >= 3: status="Yes", if 0 < count < 3: status="Not Sure", if count=0: status="No"
-
-Item #4: "Asks about symptoms upon regaining consciousness (loss of urine, tongue biting, feeling fine on recovery or sluggish, injury other than head) - must ask all 3"
-- Search for: loss of urine, tongue biting, feeling fine/sluggish on recovery, injury other than head
-- Count how many were addressed
-- If all addressed: status="Yes", if some but not all: status="Not Sure", if none: status="No"
-
-Item #5: "Asks about recent illnesses impacting oral intake (eating drinking normally, nausea, vomiting, diarrhea, black or bloody stools, other blood loss) - must ask at least 4"
-- Search for: eating/drinking normally, nausea, vomiting, diarrhea, black/bloody stools, blood loss
-- Count how many were addressed
-- If count >= 4: status="Yes", if 0 < count < 4: status="Not Sure", if count=0: status="No"
+Evaluate all 20 items. Items 2, 4, 5 must have subitems array with individual evaluation for each sub-item.
