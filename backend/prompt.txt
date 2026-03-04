@@ -45,15 +45,15 @@ Evaluate based on whether the INFORMATION was obtained or the ACTION was perform
 ## Important Notes:
 - For items 1-10 (history questions): Mark as "Yes" if the information was obtained - either by the student asking OR by the patient volunteering the information. If the patient already provided the information earlier in the conversation, the student does not need to ask again.
 - For items 11-20 (physical exam): Since this is a transcript, look for the student SAYING they are performing the action (e.g., "I'm going to check your blood pressure", "Let me listen to your lungs", "I'm checking your reflexes")
-- For items requiring multiple questions (e.g., "must ask at least 3" or "must ask all 3"): COUNT the number of sub-items that were clearly addressed. If the count meets or exceeds the threshold, mark as "Yes". If some sub-items were addressed but the count is below the threshold, mark as "Not Sure" to flag for review. Only use "No" if there is no evidence of any sub-items being addressed.
 
 ## Instructions:
 For items WITH sub-items (2, 4, 5), evaluate each sub-item individually:
 - For each sub-item: status (Yes/No/Not Sure), reasoning (brief), evidence (exact quote), timestamp, timestamp_end
-- Calculate overall_status:
-  - Item 2 (at least 3): If Yes count >= 3 = Yes, if Yes count = 1-2 = Not Sure, if Yes count = 0 = No
-  - Item 4 (ALL required): If Yes count = 4 = Yes, if Yes count = 0 = No, if Yes count = 1-3 = No (partial is failure)
-  - Item 5 (at least 4): If Yes count >= 4 = Yes, if Yes count = 1-3 = Not Sure, if Yes count = 0 = No
+- Calculate overall_status by COUNTING sub-item statuses:
+  - Item 2 (at least 3 of 5): Count Yes. If Yes >= 3 then overall_status = "Yes". If Yes < 3 but (Yes + Not Sure) >= 3 then overall_status = "Not Sure". Otherwise overall_status = "No".
+  - Item 4 (ALL 4 required): Count Yes. If Yes = 4 then overall_status = "Yes". If Yes < 4 but (Yes + Not Sure) = 4 then overall_status = "Not Sure". Otherwise overall_status = "No".
+  - Item 5 (at least 4 of 6): Count Yes. If Yes >= 4 then overall_status = "Yes". If Yes < 4 but (Yes + Not Sure) >= 4 then overall_status = "Not Sure". Otherwise overall_status = "No".
+- IMPORTANT: You MUST count the sub-item statuses and apply the logic above. Do not guess or estimate.
 
 For items WITHOUT sub-items (1, 3, 6-20):
 - status (Yes/No/Not Sure), evidence (exact quote), timestamp, timestamp_end

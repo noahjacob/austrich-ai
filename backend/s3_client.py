@@ -47,7 +47,7 @@ def get_transcript_from_s3(file_key: str) -> str:
     return response['Body'].read().decode('utf-8')
 
 
-def save_report_to_s3(report_id: str, transcript: str, report_text: str, source_file: str = None, model_id: str = None):
+def save_report_to_s3(report_id: str, transcript: str, report_text: str, source_file: str = None, model_id: str = None, transcription_time: float = None):
     """Save report to reports/ folder in output bucket"""
     s3 = get_s3_client()
     
@@ -59,6 +59,10 @@ def save_report_to_s3(report_id: str, transcript: str, report_text: str, source_
         'transcript': transcript,
         'report': report_text
     }
+    
+    # Only add transcription_time if it was provided (audio transcription)
+    if transcription_time is not None:
+        report_data['transcription_time'] = transcription_time
     
     file_key = f"reports/{report_id}.json"
     

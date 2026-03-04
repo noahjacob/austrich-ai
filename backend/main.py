@@ -391,6 +391,119 @@ async def upload_and_analyze_audio(
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
+@app.post("/benchmark/transcribe")
+async def benchmark_transcribe(
+    file: UploadFile = File(...)
+):
+    """Transcribe audio and track timing for benchmarking"""
+    file_content = await file.read()
+    file_ext = Path(file.filename).suffix.lower()
+    filename_stem = Path(file.filename).stem
+    
+    async def generate():
+        try:
+            if file_ext not in ['.mp3', '.wav', '.m4a', '.flac', '.ogg', '.webm']:
+                yield f"data: {{\"status\": \"error\", \"message\": \"Invalid audio format\"}}\n\n"
+                return
+            
+            yield f"data: {{\"status\": \"uploading\", \"message\": \"Uploading audio to S3...\"}}\n\n"
+            
+            s3 = get_s3_client()
+            audio_key = f"audio/{uuid.uuid4()}{file_ext}"
+            s3.put_object(Bucket=S3_INPUT_BUCKET, Key=audio_key, Body=file_content)
+            
+            yield f"data: {{\"status\": \"transcribing\", \"message\": \"Transcribing audio...\"}}\n\n"
+            
+            import time
+            transcription_start = time.time()
+            transcript = await transcribe_audio_file(audio_key)
+            transcription_time = time.time() - transcription_start
+            
+            # Save transcript
+            transcript_key = f"transcripts/{filename_stem}.txt"
+            s3.put_object(
+                Bucket=S3_INPUT_BUCKET,
+                Key=transcript_key,
+                Body=transcript.encode('utf-8'),
+                ContentType='text/plain'
+            )
+            
+            yield f"data: {{\"status\": \"complete\", \"filename\": \"{file.filename}\", \"transcription_time\": {transcription_time:.2f}, \"transcript_key\": \"{transcript_key}\", \"transcript_length\": {len(transcript)}, \"message\": \"Transcription completed\"}}\n\n"
+        
+        except Exception as e:
+            error_msg = str(e).replace('"', '\\"').replace('\n', ' ')
+            yield f"data: {{\"status\": \"error\", \"message\": \"{error_msg}\"}}\n\n"
+    
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.post("/benchmark/analyze")
+async def benchmark_analyze(
+    files: list[UploadFile] = File(...),
+    model_ids: list[str] = Form(...)
+):
+    """Analyze transcript files with multiple models and track timing"""
+    # Read all files first before generator starts
+    transcripts = []
+    for file in files:
+        content = await file.read()
+        transcripts.append((file.filename, content.decode('utf-8')))
+    
+    async def generate():
+        try:
+            results = []
+            
+            # Create all analysis tasks (transcript x model combinations)
+            tasks = []
+            for filename, transcript in transcripts:
+                for model_id in model_ids:
+                    tasks.append((filename, model_id, transcript))
+            
+            yield f"data: {{\"status\": \"analyzing\", \"message\": \"Running {len(tasks)} analyses in parallel...\"}}\n\n"
+            
+            # Run all analyses in parallel
+            import time
+            async def analyze_one(filename, model_id, transcript):
+                start = time.time()
+                report_text = await analyze_transcript_with_bedrock(transcript, model_id)
+                analysis_time = time.time() - start
+                
+                # Parse checklist from report
+                try:
+                    cleaned_text = report_text.strip()
+                    if '```json' in cleaned_text:
+                        cleaned_text = cleaned_text.split('```json', 1)[1].split('```', 1)[0]
+                    elif '```' in cleaned_text:
+                        cleaned_text = cleaned_text.split('```', 1)[1].rsplit('```', 1)[0]
+                    
+                    start_idx = cleaned_text.find('{')
+                    end_idx = cleaned_text.rfind('}') + 1
+                    if start_idx != -1 and end_idx > start_idx:
+                        cleaned_text = cleaned_text[start_idx:end_idx]
+                    
+                    report_data = json.loads(cleaned_text)
+                    checklist = report_data.get('checklist', [])
+                except:
+                    checklist = []
+                
+                return {
+                    'transcript_key': filename,
+                    'model_id': model_id,
+                    'analysis_time': analysis_time,
+                    'checklist': checklist
+                }
+            
+            results = await asyncio.gather(*[analyze_one(fn, mid, t) for fn, mid, t in tasks])
+            
+            yield f"data: {{\"status\": \"complete\", \"results\": {json.dumps(results)}, \"message\": \"Analysis completed\"}}\n\n"
+        
+        except Exception as e:
+            error_msg = str(e).replace('"', '\\"').replace('\n', ' ')
+            yield f"data: {{\"status\": \"error\", \"message\": \"{error_msg}\"}}\n\n"
+    
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 @app.get("/reports")
 async def list_reports():
     """List all available reports from S3"""
