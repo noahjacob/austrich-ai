@@ -52,6 +52,8 @@ export default function Analyze() {
     { id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', name: 'Claude 4.5 Haiku' },
     { id: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', name: 'Claude 4.5 Sonnet' },
     { id: 'us.anthropic.claude-opus-4-6-v1', name: 'Claude 4.6 Opus' },
+    { id: 'us.meta.llama4-maverick-17b-instruct-v1:0', name: 'Llama 4 Maverick' },
+    { id: 'us.meta.llama4-scout-17b-instruct-v1:0', name: 'Llama 4 Scout' },
   ];
 
   useEffect(() => {

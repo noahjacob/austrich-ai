@@ -11,6 +11,7 @@ from typing import Optional
 from models import AnalyzeTranscriptRequest, AnalyzeFromS3Request, AnalyzeResponse, OSCEReport
 from bedrock import analyze_transcript_with_bedrock
 from pdf_generator import generate_pdf_report
+from json_repair import repair_json
 from s3_client import (
     list_input_transcripts,
     get_transcript_from_s3,
@@ -150,18 +151,7 @@ async def analyze_transcript_endpoint(
             
             # Parse JSON response
             try:
-                cleaned_text = report_text.strip()
-                
-                if '```json' in cleaned_text:
-                    cleaned_text = cleaned_text.split('```json', 1)[1].split('```', 1)[0]
-                elif '```' in cleaned_text:
-                    cleaned_text = cleaned_text.split('```', 1)[1].rsplit('```', 1)[0]
-                
-                start = cleaned_text.find('{')
-                end = cleaned_text.rfind('}') + 1
-                if start != -1 and end > start:
-                    cleaned_text = cleaned_text[start:end]
-                
+                cleaned_text = repair_json(report_text)
                 report_data = json.loads(cleaned_text)
                 
                 # Validate and fix overall_status for items with sub-items
@@ -377,17 +367,7 @@ async def upload_and_analyze_audio(
             
             # Parse and clean the report
             try:
-                cleaned_text = report_text.strip()
-                if '```json' in cleaned_text:
-                    cleaned_text = cleaned_text.split('```json', 1)[1].split('```', 1)[0]
-                elif '```' in cleaned_text:
-                    cleaned_text = cleaned_text.split('```', 1)[1].rsplit('```', 1)[0]
-                
-                start = cleaned_text.find('{')
-                end = cleaned_text.rfind('}') + 1
-                if start != -1 and end > start:
-                    cleaned_text = cleaned_text[start:end]
-                
+                cleaned_text = repair_json(report_text)
                 report_data = json.loads(cleaned_text)
                 
                 # Clean timestamps in checklist items
@@ -502,17 +482,7 @@ async def benchmark_analyze(
                 
                 # Parse checklist from report
                 try:
-                    cleaned_text = report_text.strip()
-                    if '```json' in cleaned_text:
-                        cleaned_text = cleaned_text.split('```json', 1)[1].split('```', 1)[0]
-                    elif '```' in cleaned_text:
-                        cleaned_text = cleaned_text.split('```', 1)[1].rsplit('```', 1)[0]
-                    
-                    start_idx = cleaned_text.find('{')
-                    end_idx = cleaned_text.rfind('}') + 1
-                    if start_idx != -1 and end_idx > start_idx:
-                        cleaned_text = cleaned_text[start_idx:end_idx]
-                    
+                    cleaned_text = repair_json(report_text)
                     report_data = json.loads(cleaned_text)
                     
                     # Validate and fix overall_status for items with sub-items

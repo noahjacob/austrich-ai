@@ -31,6 +31,8 @@ const MODELS = [
   { id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', name: 'Claude 4.5 Haiku' },
   { id: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', name: 'Claude 4.5 Sonnet' },
   { id: 'us.anthropic.claude-opus-4-6-v1', name: 'Claude 4.6 Opus' },
+  { id: 'us.meta.llama4-maverick-17b-instruct-v1:0', name: 'Llama 4 Maverick' },
+  { id: 'us.meta.llama4-scout-17b-instruct-v1:0', name: 'Llama 4 Scout' },
 ];
 
 export default function Benchmark() {
@@ -293,12 +295,12 @@ export default function Benchmark() {
   const exportAnalysisToCSV = () => {
     if (analysisResults.length === 0) return;
 
-    // Fixed list of all checklist items (32 total: 1, 2a-2e, 3, 4a-4d, 5a-5e, 6-20)
+    // First 10 checklist items with sub-items: 1, 2, 2a-2e, 3, 4, 4a-4d, 5, 5a-5e, 6, 7, 8, 9, 10
     const CHECKLIST_ITEMS = [
-      '1', '2a', '2b', '2c', '2d', '2e', '3',
-      '4a', '4b', '4c', '4d',
-      '5a', '5b', '5c', '5d', '5e',
-      '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20'
+      '1', '2', '2a', '2b', '2c', '2d', '2e', '3',
+      '4', '4a', '4b', '4c', '4d',
+      '5', '5a', '5b', '5c', '5d', '5e',
+      '6', '7', '8', '9', '10'
     ];
 
     // Extract case number from filename
@@ -330,13 +332,23 @@ export default function Benchmark() {
           if (result?.checklist) {
             for (const item of result.checklist) {
               if (item.has_subitems && item.subitems) {
-                const subItem = item.subitems.find(s => {
-                  const match = s.item.match(/^(\d+[a-z])\./); 
-                  return match && match[1] === itemNum;
-                });
-                if (subItem) {
-                  status = subItem.status;
-                  break;
+                // Check if we're looking for a sub-item (e.g., '2a', '4b')
+                if (itemNum.match(/^\d+[a-z]$/)) {
+                  const subItem = item.subitems.find(s => {
+                    const match = s.item.match(/^(\d+[a-z])\./); 
+                    return match && match[1] === itemNum;
+                  });
+                  if (subItem) {
+                    status = subItem.status;
+                    break;
+                  }
+                } else {
+                  // Looking for parent item (e.g., '2', '4', '5')
+                  const match = item.item.match(/^(\d+)\./); 
+                  if (match && match[1] === itemNum) {
+                    status = item.overall_status || 'MISSING';
+                    break;
+                  }
                 }
               } else {
                 const match = item.item.match(/^(\d+)\./); 
@@ -550,9 +562,6 @@ export default function Benchmark() {
                   Analysis Complete ({analysisResults.length} results)
                 </h3>
                 <div className="flex space-x-2">
-                  <button onClick={exportAllCSVs} className="btn-primary text-sm">
-                    📊 Export All CSVs
-                  </button>
                   <button onClick={exportAnalysisTimesToCSV} className="btn-secondary text-sm">
                     Export Times CSV
                   </button>
@@ -567,7 +576,7 @@ export default function Benchmark() {
 
               <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
                 <p className="text-sm text-green-800">
-                  ✓ {analysisResults.length} analyses completed successfully. Click "Export All CSVs" to download both timing and results data.
+                  ✓ {analysisResults.length} analyses completed successfully. Export timing and results data using the buttons above.
                 </p>
               </div>
             </div>
