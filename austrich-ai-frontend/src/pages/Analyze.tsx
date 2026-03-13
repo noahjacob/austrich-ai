@@ -54,6 +54,9 @@ export default function Analyze() {
     { id: 'us.anthropic.claude-opus-4-6-v1', name: 'Claude 4.6 Opus' },
     { id: 'us.meta.llama4-maverick-17b-instruct-v1:0', name: 'Llama 4 Maverick' },
     { id: 'us.meta.llama4-scout-17b-instruct-v1:0', name: 'Llama 4 Scout' },
+    { id: 'qwen.qwen3-next-80b-a3b', name: 'Qwen 3 Next 80B' },
+    { id: 'deepseek.v3.2', name: 'DeepSeek V3.2' },
+    { id: 'us.mistral.pixtral-large-2502-v1:0', name: 'Mistral Pixtral Large' },
   ];
 
   useEffect(() => {
