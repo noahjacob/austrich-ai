@@ -19,10 +19,10 @@ executor = ThreadPoolExecutor(max_workers=10)
 
 
 # Load the prompt from file for easy editing
-def load_prompt():
-    prompt_file = Path(__file__).parent / "prompt.txt"
-    if prompt_file.exists():
-        return prompt_file.read_text(encoding='utf-8')
+def load_prompt(prompt_file: str = "prompt.txt"):
+    prompt_path = Path(__file__).parent / prompt_file
+    if prompt_path.exists():
+        return prompt_path.read_text(encoding='utf-8')
     # Fallback prompt if file doesn't exist
     return """You are an expert medical educator evaluating an OSCE (Objective Structured Clinical Examination) performance.
 
@@ -40,7 +40,7 @@ Transcript:
 
 
 
-def _call_bedrock_sync(transcript: str, model_id: str) -> str:
+def _call_bedrock_sync(transcript: str, model_id: str, prompt_file: str = "prompt.txt") -> str:
     """Synchronous Bedrock call to run in thread pool"""
     # Create Bedrock client (each thread gets its own)
     bedrock = boto3.client(
@@ -51,7 +51,7 @@ def _call_bedrock_sync(transcript: str, model_id: str) -> str:
     )
     
     # Load and prepare the prompt
-    prompt_template = load_prompt()
+    prompt_template = load_prompt(prompt_file)
     prompt = prompt_template.format(transcript=transcript)
     
     # Prepare the request payload
@@ -76,7 +76,7 @@ def _call_bedrock_sync(transcript: str, model_id: str) -> str:
     return result
 
 
-async def analyze_transcript_with_bedrock(transcript: str, model_id: str = None) -> str:
+async def analyze_transcript_with_bedrock(transcript: str, model_id: str = None, prompt_file: str = "prompt.txt") -> str:
     """
     Analyze OSCE transcript using AWS Bedrock with proper AWS credentials
     Returns the full text response from the model
@@ -87,10 +87,11 @@ async def analyze_transcript_with_bedrock(transcript: str, model_id: str = None)
     
     try:
         print(f"DEBUG: Using model: {model_id}")
+        print(f"DEBUG: Using prompt file: {prompt_file}")
         
         # Run the synchronous boto3 call in a thread pool for true parallelism
         loop = asyncio.get_event_loop()
-        report_text = await loop.run_in_executor(executor, _call_bedrock_sync, transcript, model_id)
+        report_text = await loop.run_in_executor(executor, _call_bedrock_sync, transcript, model_id, prompt_file)
         return report_text
     
     except Exception as e:

@@ -17,5 +17,8 @@ def repair_json(text: str) -> str:
     if start != -1 and end > start:
         text = text[start:end]
     
-    # Single quotes are valid in JSON strings - no escaping needed
+    # Fix malformed keys with whitespace INSIDE quotes: "\n  checklist" -> "checklist"
+    # This handles keys that have newlines/spaces at the start or end inside the quotes
+    text = re.sub(r'"\s*([^"\s][^"]*?)\s*"\s*:', r'"\1":', text)
+    
     return text.strip()

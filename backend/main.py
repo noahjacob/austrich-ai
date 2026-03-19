@@ -152,6 +152,8 @@ async def analyze_transcript_endpoint(
             # Parse JSON response
             try:
                 cleaned_text = repair_json(report_text)
+                print(f"DEBUG: Cleaned JSON (first 200 chars): {cleaned_text[:200]}")
+                print(f"DEBUG: Cleaned JSON keys: {list(json.loads(cleaned_text).keys())}")
                 report_data = json.loads(cleaned_text)
                 
                 # Validate and fix overall_status for items with sub-items
@@ -453,7 +455,8 @@ async def benchmark_transcribe(
 @app.post("/benchmark/analyze")
 async def benchmark_analyze(
     files: list[UploadFile] = File(...),
-    model_ids: list[str] = Form(...)
+    model_ids: list[str] = Form(...),
+    prompt_file: str = Form("prompt.txt")
 ):
     """Analyze transcript files with multiple models and track timing"""
     # Read all files first before generator starts
@@ -477,7 +480,7 @@ async def benchmark_analyze(
             import time
             async def analyze_one(filename, model_id, transcript):
                 start = time.time()
-                report_text = await analyze_transcript_with_bedrock(transcript, model_id)
+                report_text = await analyze_transcript_with_bedrock(transcript, model_id, prompt_file)
                 analysis_time = time.time() - start
                 
                 # Parse checklist from report

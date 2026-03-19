@@ -38,6 +38,13 @@ const MODELS = [
   { id: 'us.mistral.pixtral-large-2502-v1:0', name: 'Mistral Pixtral Large' },
 ];
 
+const PROMPTS = [
+  { id: 'prompt.txt', name: 'CoT + Evidence Examples (Current)' },
+  { id: 'prompt_backup.txt', name: 'Original with Few-Shot' },
+  { id: 'prompt_cot.txt', name: 'CoT Only (No Examples)' },
+  { id: 'prompt_evidence.txt', name: 'Evidence Examples Only (No CoT)' },
+];
+
 export default function Benchmark() {
   const [files, setFiles] = useState<File[]>([]);
   const [results, setResults] = useState<TranscriptionResult[]>([]);
@@ -46,6 +53,7 @@ export default function Benchmark() {
   
   const [transcriptFiles, setTranscriptFiles] = useState<File[]>([]);
   const [selectedModels, setSelectedModels] = useState<string[]>(MODELS.map(m => m.id));
+  const [selectedPrompt, setSelectedPrompt] = useState<string>('prompt.txt');
   const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
 
@@ -178,6 +186,7 @@ export default function Benchmark() {
     const formData = new FormData();
     transcriptFiles.forEach(file => formData.append('files', file));
     selectedModels.forEach(m => formData.append('model_ids', m));
+    formData.append('prompt_file', selectedPrompt);
 
     try {
       const response = await fetch('http://localhost:8000/benchmark/analyze', {
@@ -524,6 +533,25 @@ export default function Benchmark() {
                 </ul>
               </div>
             )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-900 mb-3">Select Prompt Version</label>
+              <select
+                value={selectedPrompt}
+                onChange={(e) => setSelectedPrompt(e.target.value)}
+                disabled={analyzing}
+                className="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 disabled:opacity-50"
+              >
+                {PROMPTS.map(prompt => (
+                  <option key={prompt.id} value={prompt.id}>
+                    {prompt.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-xs text-gray-500">
+                Choose which prompt version to use for evaluation
+              </p>
+            </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-900 mb-3">Select Models</label>
