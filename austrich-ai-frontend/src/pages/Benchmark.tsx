@@ -40,7 +40,6 @@ const MODELS = [
 
 const PROMPTS = [
   { id: 'prompt.txt', name: 'CoT + Evidence Examples (Current)' },
-  { id: 'prompt_backup.txt', name: 'Original with Few-Shot' },
   { id: 'prompt_cot.txt', name: 'CoT Only (No Examples)' },
   { id: 'prompt_evidence.txt', name: 'Evidence Examples Only (No CoT)' },
 ];
@@ -52,7 +51,7 @@ export default function Benchmark() {
   const [error, setError] = useState<string | null>(null);
   
   const [transcriptFiles, setTranscriptFiles] = useState<File[]>([]);
-  const [selectedModels, setSelectedModels] = useState<string[]>(MODELS.map(m => m.id));
+  const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [selectedPrompt, setSelectedPrompt] = useState<string>('prompt.txt');
   const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
@@ -241,15 +240,6 @@ export default function Benchmark() {
       // Final update
       setAnalysisResults(allResults);
       console.log('Setting final results:', allResults.length);
-      
-      // Auto-export CSVs if analysis completed successfully
-      if (isComplete && allResults.length > 0) {
-        console.log('Auto-exporting CSVs...');
-        setTimeout(() => {
-          exportAnalysisTimesToCSV();
-          setTimeout(() => exportAnalysisToCSV(), 200);
-        }, 500);
-      }
       
     } catch (e) {
       console.error('Analysis error:', e);
