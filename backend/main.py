@@ -139,22 +139,47 @@ async def analyze_transcript_endpoint(
     
     async def generate():
         try:
-            yield f"data: {{\"status\": \"analyzing\", \"message\": \"Analyzing transcript with AI...\"}}\n\n"
+            yield f"data: {{\"status\": \"analyzing\", \"message\": \"Analyzing transcript with AI (checklist + empathy)...\"}}\n\n"
             
             # Generate report ID from filename and timestamp
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename_base = Path(source_filename).stem if source_filename else 'transcript'
             report_id = f"{filename_base}_{timestamp}"
-            report_text = await analyze_transcript_with_bedrock(transcript_text, model_id)
+            
+            # Run both analyses in parallel
+            checklist_task = analyze_transcript_with_bedrock(transcript_text, model_id, "prompt.txt")
+            empathy_task = analyze_transcript_with_bedrock(transcript_text, model_id, "prompt_empathy_communication.txt")
+            
+            checklist_text, empathy_text = await asyncio.gather(checklist_task, empathy_task)
             
             yield f"data: {{\"status\": \"processing\", \"message\": \"Parsing AI evaluation results...\"}}\n\n"
             
-            # Parse JSON response
+            # Parse JSON responses
             try:
-                cleaned_text = repair_json(report_text)
-                print(f"DEBUG: Cleaned JSON (first 200 chars): {cleaned_text[:200]}")
-                print(f"DEBUG: Cleaned JSON keys: {list(json.loads(cleaned_text).keys())}")
-                report_data = json.loads(cleaned_text)
+                # Parse checklist
+                cleaned_checklist = repair_json(checklist_text)
+                print(f"DEBUG: Cleaned checklist JSON (first 200 chars): {cleaned_checklist[:200]}")
+                checklist_data = json.loads(cleaned_checklist)
+                print(f"DEBUG: Checklist keys: {list(checklist_data.keys())}")
+                
+                # Parse empathy
+                cleaned_empathy = repair_json(empathy_text)
+                print(f"DEBUG: Cleaned empathy JSON (first 200 chars): {cleaned_empathy[:200]}")
+                empathy_data = json.loads(cleaned_empathy)
+                print(f"DEBUG: Empathy keys: {list(empathy_data.keys())}")
+                
+                # Validate empathy data has required key
+                if 'empathy_and_communication' not in empathy_data:
+                    print(f"ERROR: empathy_and_communication key missing. Full empathy data: {empathy_data}")
+                    yield f"data: {{\"status\": \"error\", \"message\": \"Empathy evaluation missing required data structure\"}}\n\n"
+                    return
+                
+                # Combine both into single report
+                report_data = {
+                    **checklist_data,
+                    **empathy_data
+                }
+                print(f"DEBUG: Combined report keys: {list(report_data.keys())}")
                 
                 # Validate and fix overall_status for items with sub-items
                 for item in report_data.get('checklist', []):
@@ -206,9 +231,17 @@ async def analyze_transcript_endpoint(
             except json.JSONDecodeError as e:
                 error_msg = str(e).replace('"', '\\"').replace('\n', ' ')
                 print(f"JSON Parse Error: {str(e)}")
-                print(f"Raw response (first 500 chars): {report_text[:500]}")
-                print(f"Cleaned text (first 500 chars): {cleaned_text[:500]}")
+                print(f"Raw checklist response (first 1000 chars): {checklist_text[:1000]}")
+                print(f"Raw empathy response (first 1000 chars): {empathy_text[:1000]}")
                 yield f"data: {{\"status\": \"error\", \"message\": \"AI returned invalid JSON: {error_msg}\"}}\n\n"
+                return
+            except KeyError as e:
+                error_msg = str(e).replace('"', '\\"').replace('\n', ' ')
+                print(f"KeyError: {str(e)}")
+                print(f"Checklist data keys: {list(checklist_data.keys()) if 'checklist_data' in locals() else 'N/A'}")
+                print(f"Empathy data keys: {list(empathy_data.keys()) if 'empathy_data' in locals() else 'N/A'}")
+                print(f"Full empathy response (first 2000 chars): {empathy_text[:2000]}")
+                yield f"data: {{\"status\": \"error\", \"message\": \"Missing required data key: {error_msg}\"}}\n\n"
                 return
             
             yield f"data: {{\"status\": \"saving\", \"message\": \"Saving report...\"}}\n\n"

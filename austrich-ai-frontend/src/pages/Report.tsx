@@ -33,6 +33,39 @@ interface ChecklistItem {
   timestamp_end?: string | null;
 }
 
+interface EmpathyItem {
+  score: number;
+  observations: string;
+  strengths: string;
+  areas_for_improvement: string;
+  score_justification: string;
+  evidence_instances: {
+    evidence: string;
+    timestamp: string;
+    timestamp_end?: string;
+  }[];
+}
+
+interface EmpathyData {
+  fostering_relationship: {
+    sets_stage: EmpathyItem;
+    listens_actively: EmpathyItem;
+    shows_compassion: EmpathyItem;
+  };
+  gathering_information: {
+    encouraging_sharing: EmpathyItem;
+  };
+  providing_information: {
+    adjusts_communication: EmpathyItem;
+  };
+  helping_decisions: {
+    gives_ownership: EmpathyItem;
+    makes_plan: EmpathyItem;
+  };
+  overall_score: number;
+  summary: string;
+}
+
 export default function Report() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -40,12 +73,14 @@ export default function Report() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
+  const [empathyData, setEmpathyData] = useState<EmpathyData | null>(null);
   const [highlightedTimestamp, setHighlightedTimestamp] = useState<string | null>(null);
   const [highlightedRange, setHighlightedRange] = useState<{start: string, end: string} | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'issues' | 'review'>('all');
   const [hasChanges, setHasChanges] = useState(false);
   const [reviewMode, setReviewMode] = useState(false);
   const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<'checklist' | 'empathy'>('checklist');
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     itemIndex: number;
@@ -69,6 +104,7 @@ export default function Report() {
           try {
             const parsed = JSON.parse(data.report);
             setChecklist(parsed.checklist || []);
+            setEmpathyData(parsed.empathy_and_communication || null);
           } catch (e) {
             console.error('Failed to parse report JSON:', e);
           }
@@ -256,6 +292,22 @@ export default function Report() {
     return 'text-red-600';
   };
 
+  const getScoreBadgeColor = (score: number) => {
+    if (score === 5) return 'bg-green-600 text-white';
+    if (score === 4) return 'bg-green-400 text-white';
+    if (score === 3) return 'bg-yellow-500 text-white';
+    if (score === 2) return 'bg-orange-500 text-white';
+    return 'bg-red-600 text-white';
+  };
+
+  const getScoreLabel = (score: number) => {
+    if (score === 5) return 'Desired (Gold Standard)';
+    if (score === 4) return 'Needs Minimal Adjustment';
+    if (score === 3) return 'Skills Developing (Passing)';
+    if (score === 2) return 'Needs Significant Adjustment';
+    return 'Unsatisfactory';
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 py-12">
@@ -326,8 +378,35 @@ export default function Report() {
               </div>
             </div>
 
-            {/* Checklist Table */}
+            {/* Tabs */}
             <div className="card mb-6">
+              <div className="border-b border-gray-200 mb-4">
+                <nav className="-mb-px flex space-x-8">
+                  <button
+                    onClick={() => setActiveTab('checklist')}
+                    className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                      activeTab === 'checklist'
+                        ? 'border-primary-500 text-primary-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    Clinical Checklist
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('empathy')}
+                    className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                      activeTab === 'empathy'
+                        ? 'border-primary-500 text-primary-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    Empathy & Communication
+                  </button>
+                </nav>
+              </div>
+
+              {activeTab === 'checklist' && (
+                <>
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-semibold text-gray-900">Critical Data Gathering & Exam Checklist</h2>
                 <div className="flex space-x-2">
@@ -510,22 +589,6 @@ export default function Report() {
                                           )}
                                         </div>
                                       )}
-                                      {sub.status === 'Not Sure' && sub.reasoning && (
-                                        <div className="mt-1.5">
-                                          <button
-                                            onClick={() => toggleReasoning(`sub-${originalIdx}-${idx}`)}
-                                            className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
-                                          >
-                                            <span>{expandedReasoning.has(`sub-${originalIdx}-${idx}`) ? '▼' : '▶'}</span>
-                                            <span>{expandedReasoning.has(`sub-${originalIdx}-${idx}`) ? 'Hide' : 'Show'} reasoning</span>
-                                          </button>
-                                          {expandedReasoning.has(`sub-${originalIdx}-${idx}`) && (
-                                            <div className="mt-1.5 p-2.5 rounded-md bg-amber-50 border border-amber-200 text-xs text-gray-700 leading-relaxed">
-                                              {sub.reasoning}
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
                                       {sub.evidence && (
                                         <p className="text-xs text-gray-600 italic mt-1.5">"{sub.evidence}"</p>
                                       )}
@@ -576,11 +639,6 @@ export default function Report() {
                                   )}
                                 </div>
                               )}
-                              {item.status === 'Not Sure' && expandedReasoning.has(`item-${originalIdx}`) && item.reasoning && (
-                                <div className="mb-2.5 p-2.5 rounded-md bg-amber-50 border border-amber-200 text-xs text-gray-700 leading-relaxed">
-                                  {item.reasoning}
-                                </div>
-                              )}
                               {item.evidence ? (
                                 <div>
                                   <p className="italic">"{item.evidence}"</p>
@@ -594,14 +652,6 @@ export default function Report() {
                                     </button>
                                   )}
                                 </div>
-                              ) : item.status === 'Not Sure' && item.reasoning ? (
-                                <button
-                                  onClick={() => toggleReasoning(`item-${originalIdx}`)}
-                                  className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
-                                >
-                                  <span>{expandedReasoning.has(`item-${originalIdx}`) ? '▼' : '▶'}</span>
-                                  <span>{expandedReasoning.has(`item-${originalIdx}`) ? 'Hide' : 'Show'} reasoning</span>
-                                </button>
                               ) : (
                                 <span className="text-gray-400">-</span>
                               )}
@@ -614,6 +664,142 @@ export default function Report() {
                   </tbody>
                 </table>
               </div>
+                </>
+              )}
+
+              {activeTab === 'empathy' && (
+                <>
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-2xl font-semibold text-gray-900">Empathy & Communication Evaluation</h2>
+                  </div>
+                  {empathyData ? (
+                    <>
+                      {/* Empathy Items Table */}
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-primary-600">
+                            <tr>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
+                                #
+                              </th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
+                                Item
+                              </th>
+                              <th className="px-6 py-3 text-center text-xs font-medium text-white uppercase tracking-wider">
+                                Score
+                              </th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
+                                Details
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {[
+                              { num: 23, label: 'Sets the stage for encounter', data: empathyData.fostering_relationship.sets_stage },
+                              { num: 25, label: 'Listens actively', data: empathyData.fostering_relationship.listens_actively },
+                              { num: 27, label: 'Shows care and compassion', data: empathyData.fostering_relationship.shows_compassion },
+                              { num: 29, label: 'Encouraging patient to share openly', data: empathyData.gathering_information.encouraging_sharing },
+                              { num: 31, label: 'Adjusts communication in the moment', data: empathyData.providing_information.adjusts_communication },
+                              { num: 33, label: 'Gives patient sense of ownership', data: empathyData.helping_decisions.gives_ownership },
+                              { num: 35, label: 'Makes a plan of action with patient', data: empathyData.helping_decisions.makes_plan },
+                            ].map((item, idx) => (
+                              <tr key={idx} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                  {item.num}
+                                </td>
+                                <td className="px-6 py-4 text-sm text-gray-900">
+                                  {item.label}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-center">
+                                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getScoreBadgeColor(item.data.score)}`}>
+                                    {item.data.score} - {getScoreLabel(item.data.score)}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 text-sm text-gray-700">
+                                  <div>
+                                    {/* Strengths */}
+                                    <div className="mb-2">
+                                      <button
+                                        onClick={() => toggleReasoning(`empathy-str-${idx}`)}
+                                        className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+                                      >
+                                        <span>{expandedReasoning.has(`empathy-str-${idx}`) ? '▼' : '▶'}</span>
+                                        <span>{expandedReasoning.has(`empathy-str-${idx}`) ? 'Hide' : 'Show'} strengths</span>
+                                      </button>
+                                      {expandedReasoning.has(`empathy-str-${idx}`) && (
+                                        <div className="mt-1.5 p-2.5 rounded-md bg-green-50 border border-green-200 text-xs text-gray-700 leading-relaxed">
+                                          {item.data.strengths}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Areas for Improvement */}
+                                    <div className="mb-2">
+                                      <button
+                                        onClick={() => toggleReasoning(`empathy-improve-${idx}`)}
+                                        className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+                                      >
+                                        <span>{expandedReasoning.has(`empathy-improve-${idx}`) ? '▼' : '▶'}</span>
+                                        <span>{expandedReasoning.has(`empathy-improve-${idx}`) ? 'Hide' : 'Show'} areas for improvement</span>
+                                      </button>
+                                      {expandedReasoning.has(`empathy-improve-${idx}`) && (
+                                        <div className="mt-1.5 p-2.5 rounded-md bg-amber-50 border border-amber-200 text-xs text-gray-700 leading-relaxed">
+                                          {item.data.areas_for_improvement}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Score Justification */}
+                                    <div className="mb-2">
+                                      <button
+                                        onClick={() => toggleReasoning(`empathy-just-${idx}`)}
+                                        className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+                                      >
+                                        <span>{expandedReasoning.has(`empathy-just-${idx}`) ? '▼' : '▶'}</span>
+                                        <span>{expandedReasoning.has(`empathy-just-${idx}`) ? 'Hide' : 'Show'} score justification</span>
+                                      </button>
+                                      {expandedReasoning.has(`empathy-just-${idx}`) && (
+                                        <div className="mt-1.5 p-2.5 rounded-md bg-purple-50 border border-purple-200 text-xs text-gray-700 leading-relaxed">
+                                          {item.data.score_justification}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Evidence Instances */}
+                                    {item.data.evidence_instances && item.data.evidence_instances.length > 0 && (
+                                      <div className="mt-2">
+                                        <div className="text-xs font-medium text-gray-700 mb-1">Evidence ({item.data.evidence_instances.length} instance{item.data.evidence_instances.length > 1 ? 's' : ''}):</div>
+                                        {item.data.evidence_instances.map((instance, instIdx) => (
+                                          <div key={instIdx} className="mb-2 pl-2 border-l-2 border-gray-300">
+                                            <p className="text-xs text-gray-600 italic">"{instance.evidence}"</p>
+                                            {instance.timestamp && (
+                                              <button
+                                                onClick={() => scrollToTimestamp(instance.timestamp, instance.timestamp_end)}
+                                                className="text-xs text-primary-600 hover:text-primary-800 mt-0.5 underline"
+                                              >
+                                                {instance.timestamp}
+                                                {instance.timestamp_end && ` - ${instance.timestamp_end}`}
+                                              </button>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      No empathy evaluation data available
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
             {/* Transcript Viewer */}

@@ -52,7 +52,13 @@ def _call_bedrock_sync(transcript: str, model_id: str, prompt_file: str = "promp
     
     # Load and prepare the prompt
     prompt_template = load_prompt(prompt_file)
-    prompt = prompt_template.format(transcript=transcript)
+    
+    # Check if prompt needs transcript placeholder
+    if '{transcript}' in prompt_template:
+        prompt = prompt_template.format(transcript=transcript)
+    else:
+        # Prompt ends with "TRANSCRIPT:" - just append
+        prompt = prompt_template + "\n" + transcript
     
     # Prepare the request payload
     payload = {

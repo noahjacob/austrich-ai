@@ -129,17 +129,17 @@ Evaluate based on whether the INFORMATION was obtained or the ACTION was perform
 
 Return ONLY valid JSON with this exact structure:
 
-{{"checklist": [{{"item": "1. Asks about onset", "has_subitems": false, "status": "Yes", "reasoning": "Student directly asked about onset", "evidence": "exact quote", "timestamp": "00:00:57", "timestamp_end": "00:01:03"}}, {{"item": "3. Duration", "has_subitems": false, "status": "Not Sure", "reasoning": "Student asked indirectly but answer was unclear", "confidence_score": 65, "evidence": "exact quote", "timestamp": "00:02:15", "timestamp_end": "00:02:20"}}, {{"item": "2. Asks about symptoms prior to onset", "has_subitems": true, "threshold": "at least 3 of 5", "overall_status": "Yes", "subitems": [{{"item": "2a. Lightheadedness", "status": "Yes", "reasoning": "Student asked and patient confirmed", "evidence": "exact quote", "timestamp": "00:01:28", "timestamp_end": "00:01:30"}}, {{"item": "2b. Dizziness", "status": "Not Sure", "reasoning": "Patient mentioned feeling 'weird' which could indicate dizziness", "confidence_score": 55, "evidence": "exact quote", "timestamp": "00:01:35", "timestamp_end": "00:01:38"}}]}}]}}
+{{"checklist": [{{"item": "1. Asks about onset", "has_subitems": false, "status": "Yes", "reasoning": "Student directly asked 'When did you faint?' at 00:00:57", "evidence": "exact quote", "timestamp": "00:00:57", "timestamp_end": "00:01:03"}}, {{"item": "3. Duration", "has_subitems": false, "status": "Not Sure", "confidence_score": 65, "confidence_reasoning": "Student asked 'How long were you out?' but patient's response was unclear and mumbled. The question was asked but the information wasn't clearly obtained, suggesting moderate confidence that this item was addressed.", "evidence": "exact quote", "timestamp": "00:02:15", "timestamp_end": "00:02:20"}}, {{"item": "2. Asks about symptoms prior to onset", "has_subitems": true, "threshold": "at least 3 of 5", "overall_status": "Yes", "subitems": [{{"item": "2a. Lightheadedness", "status": "Yes", "reasoning": "Student asked 'Did you feel lightheaded?' and patient confirmed", "evidence": "exact quote", "timestamp": "00:01:28", "timestamp_end": "00:01:30"}}, {{"item": "2b. Dizziness", "status": "Not Sure", "confidence_score": 55, "confidence_reasoning": "Patient mentioned feeling 'weird' and 'off' before passing out, which could indicate dizziness, but student didn't explicitly ask about dizziness or spinning sensations. Moderate confidence as the symptom may have been captured indirectly.", "evidence": "exact quote", "timestamp": "00:01:35", "timestamp_end": "00:01:38"}}]}}]}}
 
 ## CRITICAL Rules:
 1. Return ONLY the JSON object - no markdown, no code blocks, no extra text
 2. The root key MUST be "checklist"
 3. All 20 items must be evaluated in order
 4. Items 2, 4, 5 MUST have complete subitems arrays
-5. The "reasoning" field is REQUIRED for ALL items and sub-items regardless of status (Yes/No/Not Sure)
+5. The "reasoning" field is REQUIRED for ALL items and sub-items with status "Yes" or "No"
 6. The "confidence_score" field (0-100) is REQUIRED when status is "Not Sure" for any item or sub-item
-7. The "confidence_reasoning" field is REQUIRED when status is "Not Sure" - explain why that specific confidence score was assigned
-8. Use null for missing evidence/timestamps only, never for reasoning
+7. The "confidence_reasoning" field is REQUIRED when status is "Not Sure" - explain why that specific confidence score was assigned and what you observed (replaces the reasoning field for Not Sure items)
+8. Use null for missing evidence/timestamps only, never for reasoning/confidence_reasoning
 9. Timestamps format: "HH:MM:SS" or null
 10. Escape quotes in evidence strings with \"
 
