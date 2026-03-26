@@ -11,7 +11,7 @@ You are an expert medical educator evaluating an OSCE (Objective Structured Clin
    d. Palpitations
    e. Chest pain
 3. Asks about estimated duration of loss of consciousness
-4. Asks about symptoms upon regaining consciousness - must ask ALL 4:
+4. Asks about symptoms upon regaining consciousness - must ask at least 3 of 4:
    a. Loss of urine
    b. Tongue biting
    c. Feeling fine on recovery or sluggish
@@ -58,7 +58,7 @@ For items WITH sub-items (2, 4, 5):
 2. Count how many sub-items have status="Yes"
 3. Apply the threshold rule to calculate overall_status:
    - Item 2 (at least 3 of 5): Yes count >= 3 → "Yes", else if (Yes + Not Sure) >= 3 → "Not Sure", else → "No"
-   - Item 4 (ALL 4 required): Yes count = 4 → "Yes", else if (Yes + Not Sure) = 4 → "Not Sure", else → "No"
+   - Item 4 (at least 3 of 4): Yes count >= 3 → "Yes", else if (Yes + Not Sure) >= 3 → "Not Sure", else → "No"
    - Item 5 (at least 4 of 5): Yes count >= 4 → "Yes", else if (Yes + Not Sure) >= 4 → "Not Sure", else → "No"
 
 ## JSON Output Format:

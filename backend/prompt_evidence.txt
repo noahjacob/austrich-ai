@@ -11,7 +11,7 @@ You are an expert medical educator evaluating an OSCE (Objective Structured Clin
    d. Palpitations
    e. Chest pain
 3. Asks about estimated duration of loss of consciousness
-4. Asks about symptoms upon regaining consciousness - must ask ALL 4:
+4. Asks about symptoms upon regaining consciousness - must ask at least 3 of 4:
    a. Loss of urine
    b. Tongue biting
    c. Feeling fine on recovery or sluggish

@@ -171,11 +171,11 @@ async def analyze_transcript_endpoint(
                             else:
                                 item['overall_status'] = 'No'
                         
-                        # Item 4: ALL 4 required
+                        # Item 4: at least 3 of 4
                         elif item['item'].startswith('4.'):
-                            if yes_count == 4:
+                            if yes_count >= 3:
                                 item['overall_status'] = 'Yes'
-                            elif yes_count + not_sure_count == 4:
+                            elif yes_count + not_sure_count >= 3:
                                 item['overall_status'] = 'Not Sure'
                             else:
                                 item['overall_status'] = 'No'
@@ -502,9 +502,9 @@ async def benchmark_analyze(
                                 else:
                                     item['overall_status'] = 'No'
                             elif item['item'].startswith('4.'):
-                                if yes_count == 4:
+                                if yes_count >= 3:
                                     item['overall_status'] = 'Yes'
-                                elif yes_count + not_sure_count == 4:
+                                elif yes_count + not_sure_count >= 3:
                                     item['overall_status'] = 'Not Sure'
                                 else:
                                     item['overall_status'] = 'No'
