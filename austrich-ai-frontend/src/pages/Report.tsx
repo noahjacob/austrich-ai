@@ -11,6 +11,8 @@ interface SubItem {
   item: string;
   status: 'Yes' | 'No' | 'Not Sure';
   reasoning: string;
+  confidence_score?: number;
+  confidence_reasoning?: string;
   evidence: string | null;
   timestamp: string | null;
   timestamp_end: string | null;
@@ -21,6 +23,9 @@ interface ChecklistItem {
   has_subitems?: boolean;
   status?: 'Yes' | 'No' | 'Not Sure';
   overall_status?: 'Yes' | 'No' | 'Not Sure';
+  reasoning?: string;
+  confidence_score?: number;
+  confidence_reasoning?: string;
   threshold?: string;
   subitems?: SubItem[];
   evidence?: string | null;
@@ -40,6 +45,7 @@ export default function Report() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'issues' | 'review'>('all');
   const [hasChanges, setHasChanges] = useState(false);
   const [reviewMode, setReviewMode] = useState(false);
+  const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     itemIndex: number;
@@ -230,6 +236,24 @@ export default function Report() {
 
   const cancelStatusChange = () => {
     setConfirmDialog({ isOpen: false, itemIndex: -1, newStatus: 'Yes' });
+  };
+
+  const toggleReasoning = (key: string) => {
+    setExpandedReasoning(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(key)) {
+        newSet.delete(key);
+      } else {
+        newSet.add(key);
+      }
+      return newSet;
+    });
+  };
+
+  const getConfidenceColor = (score: number) => {
+    if (score >= 70) return 'text-orange-600';
+    if (score >= 40) return 'text-amber-600';
+    return 'text-red-600';
   };
 
   if (loading) {
@@ -454,8 +478,56 @@ export default function Report() {
                                     </span>
                                     <div className="flex-1">
                                       <div className="text-xs font-medium text-gray-700">{sub.item.replace(/^\d+[a-z]\.\s*/, '')}</div>
+                                      {sub.status === 'Not Sure' && sub.confidence_score !== undefined && (
+                                        <div className="mt-1 flex items-center gap-2">
+                                          <span className="text-xs font-semibold text-amber-600">
+                                            {sub.confidence_score}% confidence
+                                          </span>
+                                          <div className="flex-1 max-w-[100px] bg-gray-200 rounded-full h-1.5">
+                                            <div
+                                              className={`h-1.5 rounded-full ${
+                                                sub.confidence_score >= 70 ? 'bg-orange-400' :
+                                                sub.confidence_score >= 40 ? 'bg-amber-400' : 'bg-red-400'
+                                              }`}
+                                              style={{ width: `${sub.confidence_score}%` }}
+                                            ></div>
+                                          </div>
+                                        </div>
+                                      )}
+                                      {sub.status === 'Not Sure' && sub.confidence_reasoning && (
+                                        <div className="mt-1.5">
+                                          <button
+                                            onClick={() => toggleReasoning(`sub-conf-${originalIdx}-${idx}`)}
+                                            className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+                                          >
+                                            <span>{expandedReasoning.has(`sub-conf-${originalIdx}-${idx}`) ? '▼' : '▶'}</span>
+                                            <span>{expandedReasoning.has(`sub-conf-${originalIdx}-${idx}`) ? 'Hide' : 'Show'} confidence reasoning</span>
+                                          </button>
+                                          {expandedReasoning.has(`sub-conf-${originalIdx}-${idx}`) && (
+                                            <div className="mt-1.5 p-2.5 rounded-md bg-blue-50 border border-blue-200 text-xs text-gray-700 leading-relaxed">
+                                              {sub.confidence_reasoning}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                      {sub.status === 'Not Sure' && sub.reasoning && (
+                                        <div className="mt-1.5">
+                                          <button
+                                            onClick={() => toggleReasoning(`sub-${originalIdx}-${idx}`)}
+                                            className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+                                          >
+                                            <span>{expandedReasoning.has(`sub-${originalIdx}-${idx}`) ? '▼' : '▶'}</span>
+                                            <span>{expandedReasoning.has(`sub-${originalIdx}-${idx}`) ? 'Hide' : 'Show'} reasoning</span>
+                                          </button>
+                                          {expandedReasoning.has(`sub-${originalIdx}-${idx}`) && (
+                                            <div className="mt-1.5 p-2.5 rounded-md bg-amber-50 border border-amber-200 text-xs text-gray-700 leading-relaxed">
+                                              {sub.reasoning}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
                                       {sub.evidence && (
-                                        <p className="text-xs text-gray-600 italic mt-1">"{sub.evidence}"</p>
+                                        <p className="text-xs text-gray-600 italic mt-1.5">"{sub.evidence}"</p>
                                       )}
                                       {sub.timestamp && (
                                         <button
@@ -470,21 +542,70 @@ export default function Report() {
                                 </div>
                               ))}
                             </div>
-                          ) : item.evidence ? (
+                          ) : (
                             <div>
-                              <p className="italic">"{item.evidence}"</p>
-                              {item.timestamp && (
+                              {item.status === 'Not Sure' && item.confidence_score !== undefined && (
+                                <div className="mb-2 flex items-center gap-2">
+                                  <span className="text-xs font-semibold text-amber-600">
+                                    {item.confidence_score}% confidence
+                                  </span>
+                                  <div className="flex-1 max-w-[120px] bg-gray-200 rounded-full h-1.5">
+                                    <div
+                                      className={`h-1.5 rounded-full ${
+                                        item.confidence_score >= 70 ? 'bg-orange-400' :
+                                        item.confidence_score >= 40 ? 'bg-amber-400' : 'bg-red-400'
+                                      }`}
+                                      style={{ width: `${item.confidence_score}%` }}
+                                    ></div>
+                                  </div>
+                                </div>
+                              )}
+                              {item.status === 'Not Sure' && item.confidence_reasoning && (
+                                <div className="mb-2">
+                                  <button
+                                    onClick={() => toggleReasoning(`item-conf-${originalIdx}`)}
+                                    className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+                                  >
+                                    <span>{expandedReasoning.has(`item-conf-${originalIdx}`) ? '▼' : '▶'}</span>
+                                    <span>{expandedReasoning.has(`item-conf-${originalIdx}`) ? 'Hide' : 'Show'} confidence reasoning</span>
+                                  </button>
+                                  {expandedReasoning.has(`item-conf-${originalIdx}`) && (
+                                    <div className="mt-1.5 p-2.5 rounded-md bg-blue-50 border border-blue-200 text-xs text-gray-700 leading-relaxed">
+                                      {item.confidence_reasoning}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {item.status === 'Not Sure' && expandedReasoning.has(`item-${originalIdx}`) && item.reasoning && (
+                                <div className="mb-2.5 p-2.5 rounded-md bg-amber-50 border border-amber-200 text-xs text-gray-700 leading-relaxed">
+                                  {item.reasoning}
+                                </div>
+                              )}
+                              {item.evidence ? (
+                                <div>
+                                  <p className="italic">"{item.evidence}"</p>
+                                  {item.timestamp && (
+                                    <button
+                                      onClick={() => scrollToTimestamp(item.timestamp!, item.timestamp_end)}
+                                      className="text-xs text-primary-600 hover:text-primary-800 mt-1 underline"
+                                    >
+                                      Jump to {item.timestamp}
+                                      {item.timestamp_end && ` - ${item.timestamp_end}`}
+                                    </button>
+                                  )}
+                                </div>
+                              ) : item.status === 'Not Sure' && item.reasoning ? (
                                 <button
-                                  onClick={() => scrollToTimestamp(item.timestamp!, item.timestamp_end)}
-                                  className="text-xs text-primary-600 hover:text-primary-800 mt-1 underline"
+                                  onClick={() => toggleReasoning(`item-${originalIdx}`)}
+                                  className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
                                 >
-                                  Jump to {item.timestamp}
-                                  {item.timestamp_end && ` - ${item.timestamp_end}`}
+                                  <span>{expandedReasoning.has(`item-${originalIdx}`) ? '▼' : '▶'}</span>
+                                  <span>{expandedReasoning.has(`item-${originalIdx}`) ? 'Hide' : 'Show'} reasoning</span>
                                 </button>
+                              ) : (
+                                <span className="text-gray-400">-</span>
                               )}
                             </div>
-                          ) : (
-                            <span className="text-gray-400">-</span>
                           )}
                         </td>
                       </tr>
