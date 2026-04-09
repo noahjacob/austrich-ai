@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorMessage from '../components/ErrorMessage';
 import AudioRecorder from '../components/AudioRecorder';
@@ -29,6 +30,7 @@ interface ChecklistItem {
 }
 
 export default function Analyze() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
@@ -125,12 +127,9 @@ export default function Analyze() {
       );
       
       const reportData = await getReport(response.report_id);
-      setReport(reportData);
       
-      if (reportData.report) {
-        const parsed = JSON.parse(reportData.report);
-        setChecklist(parsed.checklist || []);
-      }
+      // Redirect to full report view instead of showing inline
+      navigate(`/reports/${response.report_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to analyze transcript');
     } finally {

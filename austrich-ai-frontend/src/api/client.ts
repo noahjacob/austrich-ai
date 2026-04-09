@@ -238,8 +238,20 @@ export async function deleteS3OutputFile(fileKey: string): Promise<{ success: bo
   return handleResponse(response);
 }
 
-export async function getReport(id: string): Promise<OSCEReport> {
-  const response = await fetch(`${API_BASE_URL}/reports/${id}`);
-  return handleResponse<OSCEReport>(response);
+export async function getReport(id: string, retries = 3, delay = 1000): Promise<OSCEReport> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/reports/${id}`);
+      return await handleResponse<OSCEReport>(response);
+    } catch (error) {
+      // If it's the last retry, throw the error
+      if (i === retries - 1) {
+        throw error;
+      }
+      // Wait before retrying (exponential backoff)
+      await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+    }
+  }
+  throw new Error('Failed to fetch report after retries');
 }
 

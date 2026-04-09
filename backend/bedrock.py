@@ -42,6 +42,10 @@ Transcript:
 
 def _call_bedrock_sync(transcript: str, model_id: str, prompt_file: str = "prompt.txt") -> str:
     """Synchronous Bedrock call to run in thread pool"""
+    import time
+    start_time = time.time()
+    
+    print(f"DEBUG: [{prompt_file}] Creating Bedrock client...")
     # Create Bedrock client (each thread gets its own)
     bedrock = boto3.client(
         service_name='bedrock-runtime',
@@ -49,6 +53,8 @@ def _call_bedrock_sync(transcript: str, model_id: str, prompt_file: str = "promp
         aws_access_key_id=AWS_ACCESS_KEY_ID,
         aws_secret_access_key=AWS_SECRET_ACCESS_KEY
     )
+    client_time = time.time() - start_time
+    print(f"DEBUG: [{prompt_file}] Bedrock client created in {client_time:.2f}s")
     
     # Load and prepare the prompt
     prompt_template = load_prompt(prompt_file)
@@ -59,6 +65,9 @@ def _call_bedrock_sync(transcript: str, model_id: str, prompt_file: str = "promp
     else:
         # Prompt ends with "TRANSCRIPT:" - just append
         prompt = prompt_template + "\n" + transcript
+    
+    prompt_time = time.time() - start_time
+    print(f"DEBUG: [{prompt_file}] Prompt prepared in {prompt_time:.2f}s (length: {len(prompt)} chars)")
     
     # Prepare the request payload
     payload = {
@@ -71,14 +80,19 @@ def _call_bedrock_sync(transcript: str, model_id: str, prompt_file: str = "promp
     }
     
     # Call Bedrock Converse API
+    api_start = time.time()
+    print(f"DEBUG: [{prompt_file}] Calling Bedrock API with model {model_id}...")
     response = bedrock.converse(
         modelId=model_id,
         messages=payload["messages"]
     )
+    api_time = time.time() - api_start
+    print(f"DEBUG: [{prompt_file}] Bedrock API responded in {api_time:.2f}s")
     
     # Extract the response text
     result = response['output']['message']['content'][0]['text']
-    print(f"DEBUG: LLM Response (first 1000 chars): {result[:1000]}")
+    total_time = time.time() - start_time
+    print(f"DEBUG: [{prompt_file}] Total time: {total_time:.2f}s, Response length: {len(result)} chars")
     return result
 
 
@@ -92,18 +106,31 @@ async def analyze_transcript_with_bedrock(transcript: str, model_id: str = None,
         model_id = BEDROCK_MODEL_ID
     
     try:
-        print(f"DEBUG: Using model: {model_id}")
-        print(f"DEBUG: Using prompt file: {prompt_file}")
+        print(f"DEBUG: [{prompt_file}] Starting analysis with model: {model_id}")
         
         # Run the synchronous boto3 call in a thread pool for true parallelism
+        import time
+        start = time.time()
         loop = asyncio.get_event_loop()
-        report_text = await loop.run_in_executor(executor, _call_bedrock_sync, transcript, model_id, prompt_file)
+        
+        # Add timeout of 120 seconds (2 minutes)
+        report_text = await asyncio.wait_for(
+            loop.run_in_executor(executor, _call_bedrock_sync, transcript, model_id, prompt_file),
+            timeout=120.0
+        )
+        
+        elapsed = time.time() - start
+        print(f"DEBUG: [{prompt_file}] Completed in {elapsed:.2f}s")
         return report_text
     
+    except asyncio.TimeoutError:
+        print(f"DEBUG: [{prompt_file}] TIMEOUT - Analysis exceeded 120 seconds")
+        raise Exception(f"Analysis timeout for {prompt_file} - exceeded 120 seconds")
+    
     except Exception as e:
-        print(f"DEBUG: Full error type: {type(e).__name__}")
-        print(f"DEBUG: Full error: {e}")
-        print(f"DEBUG: Error args: {e.args}")
+        print(f"DEBUG: [{prompt_file}] ERROR - Full error type: {type(e).__name__}")
+        print(f"DEBUG: [{prompt_file}] ERROR - Full error: {e}")
+        print(f"DEBUG: [{prompt_file}] ERROR - Error args: {e.args}")
         if hasattr(e, 'response'):
-            print(f"DEBUG: Error response: {e.response}")
+            print(f"DEBUG: [{prompt_file}] ERROR - Error response: {e.response}")
         raise Exception(f"Error calling Bedrock API: {repr(e)}")

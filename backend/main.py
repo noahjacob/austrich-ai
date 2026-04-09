@@ -146,7 +146,7 @@ async def analyze_transcript_endpoint(
             filename_base = Path(source_filename).stem if source_filename else 'transcript'
             report_id = f"{filename_base}_{timestamp}"
             
-            # Run both analyses in parallel
+            # Run both analyses in parallel using direct model calls
             checklist_task = analyze_transcript_with_bedrock(transcript_text, model_id, "prompt.txt")
             empathy_task = analyze_transcript_with_bedrock(transcript_text, model_id, "prompt_empathy_communication.txt")
             
@@ -160,14 +160,28 @@ async def analyze_transcript_endpoint(
                 cleaned_checklist = repair_json(checklist_text)
                 print(f"DEBUG: Cleaned checklist JSON (first 200 chars): {cleaned_checklist[:200]}")
                 checklist_data = json.loads(cleaned_checklist)
-                print(f"DEBUG: Checklist keys: {list(checklist_data.keys())}")
-                
+                print(f"DEBUG: Checklist parsed successfully, keys: {list(checklist_data.keys())}")
+            except json.JSONDecodeError as e:
+                error_msg = f"Checklist JSON error: {str(e)}"
+                print(f"ERROR: {error_msg}")
+                print(f"Raw checklist response length: {len(checklist_text)} chars")
+                yield f"data: {{\"status\": \"error\", \"message\": \"{error_msg.replace('"', '\\\"')}\"}}\n\n"
+                return
+            
+            try:
                 # Parse empathy
                 cleaned_empathy = repair_json(empathy_text)
                 print(f"DEBUG: Cleaned empathy JSON (first 200 chars): {cleaned_empathy[:200]}")
                 empathy_data = json.loads(cleaned_empathy)
-                print(f"DEBUG: Empathy keys: {list(empathy_data.keys())}")
-                
+                print(f"DEBUG: Empathy parsed successfully, keys: {list(empathy_data.keys())}")
+            except json.JSONDecodeError as e:
+                error_msg = f"Empathy JSON error: {str(e)}"
+                print(f"ERROR: {error_msg}")
+                print(f"Raw empathy response length: {len(empathy_text)} chars")
+                yield f"data: {{\"status\": \"error\", \"message\": \"{error_msg.replace('"', '\\\"')}\"}}\n\n"
+                return
+            
+            try:
                 # Validate empathy data has required key
                 if 'empathy_and_communication' not in empathy_data:
                     print(f"ERROR: empathy_and_communication key missing. Full empathy data: {empathy_data}")
@@ -246,9 +260,10 @@ async def analyze_transcript_endpoint(
             
             yield f"data: {{\"status\": \"saving\", \"message\": \"Saving report...\"}}\n\n"
             
-            # Save to S3 reports/ folder with source filename
+            # Save to S3 reports/ folder with source filename - MUST complete before sending report_id
             save_report_to_s3(report_id, transcript_text, json.dumps(report_data), source_file=source_filename, model_id=model_id)
             
+            # Only send complete status AFTER report is saved
             yield f"data: {{\"status\": \"complete\", \"report_id\": \"{report_id}\", \"message\": \"Analysis completed successfully\"}}\n\n"
         
         except Exception as e:
@@ -393,17 +408,31 @@ async def upload_and_analyze_audio(
             # Audio saved at: s3://bucket/audio/filename.webm
             # Transcript saved at: s3://bucket/transcripts/filename.txt
             
-            yield f"data: {{\"status\": \"analyzing\", \"message\": \"Analyzing transcript with AI...\"}}\n\n"
+            yield f"data: {{\"status\": \"analyzing\", \"message\": \"Step 4/4: Analyzing transcript with AI...\"}}\n\n"
             
             # Generate report ID from filename and timestamp
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             report_id = f"{original_filename}_{timestamp}"
-            report_text = await analyze_transcript_with_bedrock(transcript, model_id)
+            
+            # Run both analyses in parallel using direct model calls
+            checklist_task = analyze_transcript_with_bedrock(transcript, model_id, "prompt.txt")
+            empathy_task = analyze_transcript_with_bedrock(transcript, model_id, "prompt_empathy_communication.txt")
+            
+            checklist_text, empathy_text = await asyncio.gather(checklist_task, empathy_task)
             
             # Parse and clean the report
             try:
-                cleaned_text = repair_json(report_text)
-                report_data = json.loads(cleaned_text)
+                cleaned_checklist = repair_json(checklist_text)
+                checklist_data = json.loads(cleaned_checklist)
+                
+                cleaned_empathy = repair_json(empathy_text)
+                empathy_data = json.loads(cleaned_empathy)
+                
+                # Combine both into single report
+                report_data = {
+                    **checklist_data,
+                    **empathy_data
+                }
                 
                 # Clean timestamps in checklist items
                 for item in report_data.get('checklist', []):
@@ -426,10 +455,11 @@ async def upload_and_analyze_audio(
                 yield f"data: {{\"status\": \"error\", \"message\": \"AI returned invalid JSON: {error_msg}\"}}\n\n"
                 return
             
-            # Save to S3 reports/ folder with original audio filename as source
+            # Save to S3 reports/ folder with original audio filename as source - MUST complete before sending report_id
             save_report_to_s3(report_id, transcript, json.dumps(report_data), source_file=f"{original_filename}{file_ext}", model_id=model_id)
             final_report_id = report_id
             
+            # Only send complete status AFTER report is saved
             yield f"data: {{\"status\": \"complete\", \"report_id\": \"{final_report_id}\", \"transcript_key\": \"{transcript_key}\", \"message\": \"Analysis completed successfully\"}}\n\n"
         
         except Exception as e:
