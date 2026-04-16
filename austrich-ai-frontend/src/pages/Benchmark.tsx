@@ -52,13 +52,13 @@ interface EmpathyResult {
 }
 
 const EMPATHY_ITEMS = [
-  { id: 'sets_stage', label: 'Sets Stage', section: 'fostering_relationship' },
-  { id: 'listens_actively', label: 'Listens Actively', section: 'fostering_relationship' },
-  { id: 'shows_compassion', label: 'Shows Compassion', section: 'fostering_relationship' },
-  { id: 'encouraging_sharing', label: 'Encouraging Sharing', section: 'gathering_information' },
-  { id: 'adjusts_communication', label: 'Adjusts Communication', section: 'providing_information' },
-  { id: 'gives_ownership', label: 'Gives Ownership', section: 'helping_decisions' },
-  { id: 'makes_plan', label: 'Makes Plan', section: 'helping_decisions' },
+  { num: 23, id: 'sets_stage', label: 'Sets Stage', section: 'fostering_relationship' },
+  { num: 25, id: 'listens_actively', label: 'Listens Actively', section: 'fostering_relationship' },
+  { num: 27, id: 'shows_compassion', label: 'Shows Compassion', section: 'fostering_relationship' },
+  { num: 29, id: 'encouraging_sharing', label: 'Encouraging Sharing', section: 'gathering_information' },
+  { num: 31, id: 'adjusts_communication', label: 'Adjusts Communication', section: 'providing_information' },
+  { num: 33, id: 'gives_ownership', label: 'Gives Ownership', section: 'helping_decisions' },
+  { num: 35, id: 'makes_plan', label: 'Makes Plan', section: 'helping_decisions' },
 ];
 
 const MODELS = [
@@ -242,6 +242,7 @@ export default function Benchmark() {
 
       const allResults: AnalysisResult[] = [];
       let isComplete = false;
+      let buffer = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -250,17 +251,19 @@ export default function Benchmark() {
           break;
         }
 
-        const text = new TextDecoder().decode(value);
-        const lines = text.split('\n');
+        buffer += new TextDecoder().decode(value);
+        const lines = buffer.split('\n');
+        // Keep the last (potentially incomplete) line in the buffer
+        buffer = lines.pop() ?? '';
 
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed || !trimmed.startsWith('data: ')) continue;
-          
+
           try {
             const data = JSON.parse(trimmed.slice(6));
             console.log('SSE message:', data.status, data.message || '');
-            
+
             if (data.status === 'data') {
               allResults.push(...data.results);
               setAnalysisResults([...allResults]);
@@ -324,13 +327,18 @@ export default function Benchmark() {
       if (!reader) { setError('No response body'); setEmpathyAnalyzing(false); return; }
 
       const allResults: EmpathyResult[] = [];
+      let buffer = '';
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const text = new TextDecoder().decode(value);
-        for (const line of text.split('\n')) {
+        buffer += new TextDecoder().decode(value);
+        const lines = buffer.split('\n');
+        // Keep the last (potentially incomplete) line in the buffer
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed || !trimmed.startsWith('data: ')) continue;
           try {
@@ -355,6 +363,37 @@ export default function Benchmark() {
     }
   };
 
+  const exportEmpathyTimesToCSV = () => {
+    if (empathyResults.length === 0) return;
+
+    const filenames = [...new Set(empathyResults.map(r => r.transcript_key))];
+    const models = [...new Set(empathyResults.map(r => r.model_id))];
+    const modelNames = models.map(m => MODELS.find(model => model.id === m)?.name || m);
+
+    const headers = ['Case', ...modelNames];
+    const rows = filenames.map(filename => {
+      const row = [filename];
+      models.forEach(modelId => {
+        const result = empathyResults.find(r => r.transcript_key === filename && r.model_id === modelId);
+        row.push(result ? result.analysis_time.toFixed(2) : '-');
+      });
+      return row;
+    });
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `empathy-times-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const exportEmpathyToCSV = () => {
     if (empathyResults.length === 0) return;
 
@@ -367,13 +406,14 @@ export default function Benchmark() {
     const models = [...new Set(empathyResults.map(r => r.model_id))];
     const modelNames = models.map(m => MODELS.find(model => model.id === m)?.name || m);
 
-    const headers = ['Case #', 'Item', ...modelNames];
+    const headers = ['Case #', ...modelNames];
     const rows: string[][] = [];
 
     filenames.forEach(filename => {
       const caseNum = getCaseNumber(filename);
       EMPATHY_ITEMS.forEach(item => {
-        const row = [caseNum, item.label];
+        const caseId = `${caseNum}${item.num}`;
+        const row = [caseId];
         models.forEach(modelId => {
           const result = empathyResults.find(r => r.transcript_key === filename && r.model_id === modelId);
           const section = result?.empathy?.[item.section as keyof typeof result.empathy] as Record<string, { score: number }> | undefined;
@@ -383,14 +423,6 @@ export default function Benchmark() {
         rows.push(row);
       });
 
-      // Overall score row
-      const overallRow = [caseNum, 'Overall'];
-      models.forEach(modelId => {
-        const result = empathyResults.find(r => r.transcript_key === filename && r.model_id === modelId);
-        const overall = result?.empathy?.overall_score;
-        overallRow.push(overall !== undefined ? String(overall) : 'MISSING');
-      });
-      rows.push(overallRow);
     });
 
     const csvContent = [
@@ -821,9 +853,14 @@ export default function Benchmark() {
                 <h3 className="text-xl font-semibold text-gray-900">
                   Empathy Analysis Complete ({empathyResults.length} results)
                 </h3>
-                <button onClick={exportEmpathyToCSV} className="btn-secondary text-sm">
-                  Export CSV
-                </button>
+                <div className="flex space-x-2">
+                  <button onClick={exportEmpathyTimesToCSV} className="btn-secondary text-sm">
+                    Export Times CSV
+                  </button>
+                  <button onClick={exportEmpathyToCSV} className="btn-secondary text-sm">
+                    Export Results CSV
+                  </button>
+                </div>
               </div>
               <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
                 <p className="text-sm text-green-800">

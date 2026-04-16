@@ -563,54 +563,51 @@ async def benchmark_analyze(
             import time
             async def analyze_one(filename, model_id, transcript):
                 start = time.time()
-                report_text = await analyze_transcript_with_bedrock(transcript, model_id, prompt_file)
-                analysis_time = time.time() - start
-                
-                # Parse checklist from report
-                try:
-                    cleaned_text = repair_json(report_text)
-                    report_data = json.loads(cleaned_text)
-                    
-                    # Validate and fix overall_status for items with sub-items
-                    for item in report_data.get('checklist', []):
-                        if item.get('has_subitems') and item.get('subitems'):
-                            yes_count = sum(1 for sub in item['subitems'] if sub.get('status') == 'Yes')
-                            not_sure_count = sum(1 for sub in item['subitems'] if sub.get('status') == 'Not Sure')
-                            
-                            if item['item'].startswith('2.'):
-                                if yes_count >= 3:
-                                    item['overall_status'] = 'Yes'
-                                elif yes_count + not_sure_count >= 3:
-                                    item['overall_status'] = 'Not Sure'
-                                else:
-                                    item['overall_status'] = 'No'
-                            elif item['item'].startswith('4.'):
-                                if yes_count >= 3:
-                                    item['overall_status'] = 'Yes'
-                                elif yes_count + not_sure_count >= 3:
-                                    item['overall_status'] = 'Not Sure'
-                                else:
-                                    item['overall_status'] = 'No'
-                            elif item['item'].startswith('5.'):
-                                if yes_count >= 4:
-                                    item['overall_status'] = 'Yes'
-                                elif yes_count + not_sure_count >= 4:
-                                    item['overall_status'] = 'Not Sure'
-                                else:
-                                    item['overall_status'] = 'No'
-                    
-                    checklist = report_data.get('checklist', [])
-                except:
-                    checklist = []
-                
+                for attempt in range(3):
+                    try:
+                        report_text = await analyze_transcript_with_bedrock(transcript, model_id, prompt_file)
+                        cleaned_text = repair_json(report_text)
+                        report_data = json.loads(cleaned_text)
+
+                        for item in report_data.get('checklist', []):
+                            if item.get('has_subitems') and item.get('subitems'):
+                                yes_count = sum(1 for sub in item['subitems'] if sub.get('status') == 'Yes')
+                                not_sure_count = sum(1 for sub in item['subitems'] if sub.get('status') == 'Not Sure')
+
+                                if item['item'].startswith('2.'):
+                                    if yes_count >= 3: item['overall_status'] = 'Yes'
+                                    elif yes_count + not_sure_count >= 3: item['overall_status'] = 'Not Sure'
+                                    else: item['overall_status'] = 'No'
+                                elif item['item'].startswith('4.'):
+                                    if yes_count >= 3: item['overall_status'] = 'Yes'
+                                    elif yes_count + not_sure_count >= 3: item['overall_status'] = 'Not Sure'
+                                    else: item['overall_status'] = 'No'
+                                elif item['item'].startswith('5.'):
+                                    if yes_count >= 4: item['overall_status'] = 'Yes'
+                                    elif yes_count + not_sure_count >= 4: item['overall_status'] = 'Not Sure'
+                                    else: item['overall_status'] = 'No'
+
+                        return {
+                            'transcript_key': filename,
+                            'model_id': model_id,
+                            'analysis_time': time.time() - start,
+                            'checklist': report_data.get('checklist', [])
+                        }
+                    except Exception as e:
+                        print(f"ERROR: analyze_one attempt {attempt + 1}/3 failed for {filename}/{model_id}: {e}")
+                        if attempt < 2:
+                            await asyncio.sleep(2)
+
+                # All retries exhausted
+                print(f"ERROR: analyze_one all retries failed for {filename}/{model_id}")
                 return {
                     'transcript_key': filename,
                     'model_id': model_id,
-                    'analysis_time': analysis_time,
-                    'checklist': checklist
+                    'analysis_time': time.time() - start,
+                    'checklist': []
                 }
-            
-            results = await asyncio.gather(*[analyze_one(fn, mid, t) for fn, mid, t in tasks])
+
+            results = await asyncio.gather(*[analyze_one(fn, mid, t) for fn, mid, t in tasks], return_exceptions=False)
             
             # Send results count instead of full payload
             yield f"data: {{\"status\": \"complete\", \"count\": {len(results)}, \"message\": \"Analysis completed\"}}\n\n"
@@ -651,21 +648,30 @@ async def benchmark_analyze_empathy(
             import time
             async def analyze_one(filename, model_id, transcript):
                 start = time.time()
-                report_text = await analyze_transcript_with_bedrock(transcript, model_id, "prompt_empathy_communication.txt")
-                analysis_time = time.time() - start
+                for attempt in range(3):
+                    try:
+                        report_text = await analyze_transcript_with_bedrock(transcript, model_id, "prompt_empathy_communication.txt")
+                        cleaned_text = repair_json(report_text)
+                        report_data = json.loads(cleaned_text)
+                        empathy = compute_empathy_overall_score(report_data.get('empathy_and_communication', {}))
+                        return {
+                            'transcript_key': filename,
+                            'model_id': model_id,
+                            'analysis_time': time.time() - start,
+                            'empathy': empathy
+                        }
+                    except Exception as e:
+                        print(f"ERROR: analyze_one (empathy) attempt {attempt + 1}/3 failed for {filename}/{model_id}: {e}")
+                        if attempt < 2:
+                            await asyncio.sleep(2)
 
-                try:
-                    cleaned_text = repair_json(report_text)
-                    report_data = json.loads(cleaned_text)
-                    empathy = compute_empathy_overall_score(report_data.get('empathy_and_communication', {}))
-                except:
-                    empathy = {}
-
+                # All retries exhausted
+                print(f"ERROR: analyze_one (empathy) all retries failed for {filename}/{model_id}")
                 return {
                     'transcript_key': filename,
                     'model_id': model_id,
-                    'analysis_time': analysis_time,
-                    'empathy': empathy
+                    'analysis_time': time.time() - start,
+                    'empathy': {}
                 }
 
             results = await asyncio.gather(*[analyze_one(fn, mid, t) for fn, mid, t in tasks])
