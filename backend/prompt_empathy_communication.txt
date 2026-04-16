@@ -184,7 +184,6 @@ Return your evaluation in the following JSON structure with chain-of-thought rea
         ]
       }
     },
-    "overall_score": <average of all 7 scores, rounded to 1 decimal>,
     "summary": "<brief 2-3 sentence overall assessment of communication skills>"
   }
 }

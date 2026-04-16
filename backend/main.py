@@ -26,6 +26,22 @@ from transcribe import transcribe_audio_file, get_s3_client
 
 app = FastAPI(title="AuSTRICH-AI API")
 
+
+def compute_empathy_overall_score(empathy: dict) -> dict:
+    """Calculate overall_score from the 7 item scores rather than trusting the LLM."""
+    scores = [
+        empathy.get('fostering_relationship', {}).get('sets_stage', {}).get('score'),
+        empathy.get('fostering_relationship', {}).get('listens_actively', {}).get('score'),
+        empathy.get('fostering_relationship', {}).get('shows_compassion', {}).get('score'),
+        empathy.get('gathering_information', {}).get('encouraging_sharing', {}).get('score'),
+        empathy.get('providing_information', {}).get('adjusts_communication', {}).get('score'),
+        empathy.get('helping_decisions', {}).get('gives_ownership', {}).get('score'),
+        empathy.get('helping_decisions', {}).get('makes_plan', {}).get('score'),
+    ]
+    valid = [s for s in scores if isinstance(s, (int, float))]
+    empathy['overall_score'] = round(sum(valid) / len(valid), 1) if valid else None
+    return empathy
+
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
@@ -173,6 +189,8 @@ async def analyze_transcript_endpoint(
                 cleaned_empathy = repair_json(empathy_text)
                 print(f"DEBUG: Cleaned empathy JSON (first 200 chars): {cleaned_empathy[:200]}")
                 empathy_data = json.loads(cleaned_empathy)
+                if 'empathy_and_communication' in empathy_data:
+                    empathy_data['empathy_and_communication'] = compute_empathy_overall_score(empathy_data['empathy_and_communication'])
                 print(f"DEBUG: Empathy parsed successfully, keys: {list(empathy_data.keys())}")
             except json.JSONDecodeError as e:
                 error_msg = f"Empathy JSON error: {str(e)}"
@@ -427,7 +445,9 @@ async def upload_and_analyze_audio(
                 
                 cleaned_empathy = repair_json(empathy_text)
                 empathy_data = json.loads(cleaned_empathy)
-                
+                if 'empathy_and_communication' in empathy_data:
+                    empathy_data['empathy_and_communication'] = compute_empathy_overall_score(empathy_data['empathy_and_communication'])
+
                 # Combine both into single report
                 report_data = {
                     **checklist_data,
@@ -605,6 +625,62 @@ async def benchmark_analyze(
             error_msg = str(e).replace('"', '\\"').replace('\n', ' ')
             yield f"data: {{\"status\": \"error\", \"message\": \"{error_msg}\"}}\n\n"
     
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.post("/benchmark/analyze-empathy")
+async def benchmark_analyze_empathy(
+    files: list[UploadFile] = File(...),
+    model_ids: list[str] = Form(...),
+):
+    """Analyze transcript files with empathy prompt for multiple models"""
+    transcripts = []
+    for file in files:
+        content = await file.read()
+        transcripts.append((file.filename, content.decode('utf-8')))
+
+    async def generate():
+        try:
+            tasks = [(filename, model_id, transcript)
+                     for filename, transcript in transcripts
+                     for model_id in model_ids]
+
+            total = len(tasks)
+            yield f"data: {{\"status\": \"analyzing\", \"message\": \"Running {total} empathy analyses in parallel...\"}}\n\n"
+
+            import time
+            async def analyze_one(filename, model_id, transcript):
+                start = time.time()
+                report_text = await analyze_transcript_with_bedrock(transcript, model_id, "prompt_empathy_communication.txt")
+                analysis_time = time.time() - start
+
+                try:
+                    cleaned_text = repair_json(report_text)
+                    report_data = json.loads(cleaned_text)
+                    empathy = compute_empathy_overall_score(report_data.get('empathy_and_communication', {}))
+                except:
+                    empathy = {}
+
+                return {
+                    'transcript_key': filename,
+                    'model_id': model_id,
+                    'analysis_time': analysis_time,
+                    'empathy': empathy
+                }
+
+            results = await asyncio.gather(*[analyze_one(fn, mid, t) for fn, mid, t in tasks])
+
+            yield f"data: {{\"status\": \"complete\", \"count\": {len(results)}, \"message\": \"Analysis completed\"}}\n\n"
+
+            chunk_size = 5
+            for i in range(0, len(results), chunk_size):
+                chunk = results[i:i+chunk_size]
+                yield f"data: {{\"status\": \"data\", \"results\": {json.dumps(chunk)}}}\n\n"
+
+        except Exception as e:
+            error_msg = str(e).replace('"', '\\"').replace('\n', ' ')
+            yield f"data: {{\"status\": \"error\", \"message\": \"{error_msg}\"}}\n\n"
+
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 

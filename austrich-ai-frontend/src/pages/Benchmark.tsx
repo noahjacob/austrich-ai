@@ -27,6 +27,40 @@ interface AnalysisResult {
   }>;
 }
 
+interface EmpathyResult {
+  transcript_key: string;
+  model_id: string;
+  analysis_time: number;
+  empathy?: {
+    fostering_relationship?: {
+      sets_stage?: { score: number };
+      listens_actively?: { score: number };
+      shows_compassion?: { score: number };
+    };
+    gathering_information?: {
+      encouraging_sharing?: { score: number };
+    };
+    providing_information?: {
+      adjusts_communication?: { score: number };
+    };
+    helping_decisions?: {
+      gives_ownership?: { score: number };
+      makes_plan?: { score: number };
+    };
+    overall_score?: number;
+  };
+}
+
+const EMPATHY_ITEMS = [
+  { id: 'sets_stage', label: 'Sets Stage', section: 'fostering_relationship' },
+  { id: 'listens_actively', label: 'Listens Actively', section: 'fostering_relationship' },
+  { id: 'shows_compassion', label: 'Shows Compassion', section: 'fostering_relationship' },
+  { id: 'encouraging_sharing', label: 'Encouraging Sharing', section: 'gathering_information' },
+  { id: 'adjusts_communication', label: 'Adjusts Communication', section: 'providing_information' },
+  { id: 'gives_ownership', label: 'Gives Ownership', section: 'helping_decisions' },
+  { id: 'makes_plan', label: 'Makes Plan', section: 'helping_decisions' },
+];
+
 const MODELS = [
   { id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', name: 'Claude 4.5 Haiku' },
   { id: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', name: 'Claude 4.5 Sonnet' },
@@ -42,6 +76,7 @@ const PROMPTS = [
   { id: 'prompt.txt', name: 'CoT + Evidence Examples (Current)' },
   { id: 'prompt_cot.txt', name: 'CoT Only (No Examples)' },
   { id: 'prompt_evidence.txt', name: 'Evidence Examples Only (No CoT)' },
+  { id: 'prompt_repeated.txt', name: 'Prompt Repetition (CoT + Evidence x2)' },
 ];
 
 export default function Benchmark() {
@@ -55,6 +90,11 @@ export default function Benchmark() {
   const [selectedPrompt, setSelectedPrompt] = useState<string>('prompt.txt');
   const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
+
+  const [empathyFiles, setEmpathyFiles] = useState<File[]>([]);
+  const [empathySelectedModels, setEmpathySelectedModels] = useState<string[]>([]);
+  const [empathyResults, setEmpathyResults] = useState<EmpathyResult[]>([]);
+  const [empathyAnalyzing, setEmpathyAnalyzing] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
@@ -256,6 +296,113 @@ export default function Benchmark() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `analysis-benchmark-raw-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleEmpathyAnalyze = async () => {
+    if (empathyFiles.length === 0 || empathySelectedModels.length === 0) {
+      setError('Please upload transcript files and select models');
+      return;
+    }
+
+    setEmpathyAnalyzing(true);
+    setError(null);
+    setEmpathyResults([]);
+
+    const formData = new FormData();
+    empathyFiles.forEach(file => formData.append('files', file));
+    empathySelectedModels.forEach(m => formData.append('model_ids', m));
+
+    try {
+      const response = await fetch('http://localhost:8000/benchmark/analyze-empathy', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const reader = response.body?.getReader();
+      if (!reader) { setError('No response body'); setEmpathyAnalyzing(false); return; }
+
+      const allResults: EmpathyResult[] = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const text = new TextDecoder().decode(value);
+        for (const line of text.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+          try {
+            const data = JSON.parse(trimmed.slice(6));
+            if (data.status === 'data') {
+              allResults.push(...data.results);
+              setEmpathyResults([...allResults]);
+            } else if (data.status === 'error') {
+              setError(data.message);
+            }
+          } catch (e) {
+            console.error('Failed to parse SSE line:', trimmed, e);
+          }
+        }
+      }
+
+      setEmpathyResults(allResults);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Empathy analysis failed');
+    } finally {
+      setEmpathyAnalyzing(false);
+    }
+  };
+
+  const exportEmpathyToCSV = () => {
+    if (empathyResults.length === 0) return;
+
+    const getCaseNumber = (filename: string) => {
+      const match = filename.match(/(\d{4})/);
+      return match ? match[1] : filename.replace('.txt', '');
+    };
+
+    const filenames = [...new Set(empathyResults.map(r => r.transcript_key))];
+    const models = [...new Set(empathyResults.map(r => r.model_id))];
+    const modelNames = models.map(m => MODELS.find(model => model.id === m)?.name || m);
+
+    const headers = ['Case #', 'Item', ...modelNames];
+    const rows: string[][] = [];
+
+    filenames.forEach(filename => {
+      const caseNum = getCaseNumber(filename);
+      EMPATHY_ITEMS.forEach(item => {
+        const row = [caseNum, item.label];
+        models.forEach(modelId => {
+          const result = empathyResults.find(r => r.transcript_key === filename && r.model_id === modelId);
+          const section = result?.empathy?.[item.section as keyof typeof result.empathy] as Record<string, { score: number }> | undefined;
+          const score = section?.[item.id]?.score;
+          row.push(score !== undefined ? String(score) : 'MISSING');
+        });
+        rows.push(row);
+      });
+
+      // Overall score row
+      const overallRow = [caseNum, 'Overall'];
+      models.forEach(modelId => {
+        const result = empathyResults.find(r => r.transcript_key === filename && r.model_id === modelId);
+        const overall = result?.empathy?.overall_score;
+        overallRow.push(overall !== undefined ? String(overall) : 'MISSING');
+      });
+      rows.push(overallRow);
+    });
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `empathy-benchmark-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -598,6 +745,89 @@ export default function Benchmark() {
               <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
                 <p className="text-sm text-green-800">
                   ✓ {analysisResults.length} analyses completed successfully. Export timing and results data using the buttons above.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+        {/* Empathy Benchmark Section */}
+        <div className="card mt-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Empathy & Communication Benchmark</h2>
+          <p className="text-gray-600 mb-6">Evaluate communication skills across models using the empathy rubric (scores 1–5)</p>
+
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-900 mb-3">Upload Transcript Files</label>
+              <input
+                type="file"
+                accept=".txt"
+                multiple
+                onChange={(e) => setEmpathyFiles(Array.from(e.target.files || []))}
+                disabled={empathyAnalyzing}
+                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 disabled:opacity-50"
+              />
+              <p className="mt-2 text-xs text-gray-500">Upload .txt transcript files</p>
+            </div>
+
+            {empathyFiles.length > 0 && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm text-blue-800 font-medium">
+                  {empathyFiles.length} file{empathyFiles.length > 1 ? 's' : ''} selected
+                </p>
+                <ul className="mt-2 text-xs text-blue-700 space-y-1">
+                  {empathyFiles.map((file, idx) => <li key={idx}>• {file.name}</li>)}
+                </ul>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-900 mb-3">Select Models</label>
+              <div className="space-y-2">
+                {MODELS.map(model => (
+                  <label key={model.id} className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={empathySelectedModels.includes(model.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setEmpathySelectedModels([...empathySelectedModels, model.id]);
+                        } else {
+                          setEmpathySelectedModels(empathySelectedModels.filter(m => m !== model.id));
+                        }
+                      }}
+                      disabled={empathyAnalyzing}
+                      className="mr-2"
+                    />
+                    <span className="text-sm text-gray-700">{model.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={handleEmpathyAnalyze}
+              disabled={empathyAnalyzing || empathyFiles.length === 0 || empathySelectedModels.length === 0}
+              className="btn-primary w-full py-3 text-lg disabled:opacity-50"
+            >
+              {empathyAnalyzing
+                ? `Analyzing... (${empathyResults.length} completed)`
+                : `Analyze (${empathyFiles.length} × ${empathySelectedModels.length} = ${empathyFiles.length * empathySelectedModels.length} runs)`}
+            </button>
+          </div>
+
+          {empathyResults.length > 0 && (
+            <div className="mt-8">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Empathy Analysis Complete ({empathyResults.length} results)
+                </h3>
+                <button onClick={exportEmpathyToCSV} className="btn-secondary text-sm">
+                  Export CSV
+                </button>
+              </div>
+              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm text-green-800">
+                  ✓ {empathyResults.length} analyses completed. Export scores using the button above.
                 </p>
               </div>
             </div>
