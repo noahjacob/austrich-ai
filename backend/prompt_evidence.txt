@@ -125,35 +125,18 @@ Evaluate based on whether the INFORMATION was obtained or the ACTION was perform
 ✓ "What medications do you take?" / "Any meds?" / "On any prescriptions?"
 ✓ "Taking any pills?" / "Any drugs or supplements?"
 
-## Evaluation Process (Think Step-by-Step):
-
-For each checklist item:
-1. Search the transcript for relevant keywords, synonyms, and paraphrases (see examples above)
-2. Identify exact quotes as evidence
-3. Determine if information was obtained or action was mentioned
-4. Assign status: Yes/No/Not Sure
-5. Provide reasoning explaining what you observed in the transcript (for all statuses including "Not Sure")
-
-For items WITH sub-items (2, 4, 5):
-1. Evaluate each sub-item individually first
-2. Count how many sub-items have status="Yes"
-3. Apply the threshold rule to calculate overall_status:
-   - Item 2 (at least 3 of 5): Yes count >= 3 → "Yes", else if (Yes + Not Sure) >= 3 → "Not Sure", else → "No"
-   - Item 4 (at least 3 of 4): Yes count >= 3 → "Yes", else if (Yes + Not Sure) >= 3 → "Not Sure", else → "No"
-   - Item 5 (at least 4 of 5): Yes count >= 4 → "Yes", else if (Yes + Not Sure) >= 4 → "Not Sure", else → "No"
-
 ## JSON Output Format:
 
 Return ONLY valid JSON with this exact structure:
 
-{{"checklist": [{{"item": "1. Asks about onset", "has_subitems": false, "status": "Yes", "reasoning": "Student directly asked 'When did you faint?' at 00:00:57", "evidence": "exact quote", "timestamp": "00:00:57", "timestamp_end": "00:01:03"}}, {{"item": "3. Duration", "has_subitems": false, "status": "Not Sure", "reasoning": "Student asked 'How long were you out?' but patient's response was unclear and mumbled", "evidence": "exact quote", "timestamp": "00:02:15", "timestamp_end": "00:02:20"}}, {{"item": "2. Asks about symptoms prior to onset", "has_subitems": true, "threshold": "at least 3 of 5", "overall_status": "Yes", "subitems": [{{"item": "2a. Lightheadedness", "status": "Yes", "reasoning": "Student asked 'Did you feel lightheaded?' and patient confirmed", "evidence": "exact quote", "timestamp": "00:01:28", "timestamp_end": "00:01:30"}}]}}]}}
+{{"checklist": [{{"item": "1. Asks about onset", "has_subitems": false, "status": "Yes", "reasoning": "Student directly asked 'When did you faint?' at 00:00:57", "evidence": "exact quote", "timestamp": "00:00:57", "timestamp_end": "00:01:03"}}, {{"item": "3. Duration", "has_subitems": false, "status": "Not Sure", "reasoning": "Student asked 'How long were you out?' but patient's response was unclear and mumbled. The question was asked but the information wasn't clearly obtained.", "evidence": "exact quote", "timestamp": "00:02:15", "timestamp_end": "00:02:20"}}, {{"item": "2. Asks about symptoms prior to onset", "has_subitems": true, "threshold": "at least 3 of 5", "overall_status": "Yes", "subitems": [{{"item": "2a. Lightheadedness", "status": "Yes", "reasoning": "Student asked 'Did you feel lightheaded?' and patient confirmed", "evidence": "exact quote", "timestamp": "00:01:28", "timestamp_end": "00:01:30"}}, {{"item": "2b. Dizziness", "status": "Not Sure", "reasoning": "Patient mentioned feeling 'weird' and 'off' before passing out, which could indicate dizziness, but student didn't explicitly ask about dizziness or spinning sensations.", "evidence": "exact quote", "timestamp": "00:01:35", "timestamp_end": "00:01:38"}}]}}]}}
 
 ## CRITICAL Rules:
 1. Return ONLY the JSON object - no markdown, no code blocks, no extra text
 2. The root key MUST be "checklist"
 3. All 20 items must be evaluated in order
 4. Items 2, 4, 5 MUST have complete subitems arrays
-5. The "reasoning" field is REQUIRED for ALL items and sub-items (including "Not Sure" status)
+5. The "reasoning" field is REQUIRED for ALL items and sub-items
 6. Use null for missing evidence/timestamps only, never for reasoning
 7. Timestamps format: "HH:MM:SS" or null
 8. Escape quotes in evidence strings with \"

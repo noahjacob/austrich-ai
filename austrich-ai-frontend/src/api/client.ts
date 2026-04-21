@@ -12,15 +12,141 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json();
 }
 
-export async function analyzeTranscript(data: AnalyzeTranscriptRequest): Promise<AnalyzeResponse> {
+export async function analyzeTranscript(
+  data: AnalyzeTranscriptRequest,
+  onProgress?: (message: string) => void
+): Promise<AnalyzeResponse> {
+  const formData = new FormData();
+  
+  if (data.file) {
+    formData.append('file', data.file);
+    
+    // Check if it's an audio file
+    const ext = data.file.name.split('.').pop()?.toLowerCase();
+    const audioExtensions = ['mp3', 'wav', 'm4a', 'flac', 'ogg', 'webm'];
+    
+    if (audioExtensions.includes(ext || '')) {
+      // Use audio upload endpoint with streaming
+      if (data.model_id) {
+        formData.append('model_id', data.model_id);
+      }
+      
+      const response = await fetch(`${API_BASE_URL}/osce/upload-and-analyze`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const error: ApiError = await response.json().catch(() => ({
+          detail: `HTTP error! status: ${response.status}`,
+        }));
+        throw new Error(error.detail || error.error || 'An error occurred');
+      }
+      
+      // Handle streaming response
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let result: AnalyzeResponse | null = null;
+      
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const jsonStr = line.slice(6).trim();
+              if (!jsonStr) continue;
+              
+              const eventData = JSON.parse(jsonStr);
+              
+              // Call progress callback
+              if (onProgress && eventData.message) {
+                onProgress(eventData.message);
+              }
+              
+              if (eventData.status === 'complete') {
+                result = { 
+                  success: true, 
+                  report_id: eventData.report_id, 
+                  message: eventData.message 
+                };
+              } else if (eventData.status === 'error') {
+                throw new Error(eventData.message);
+              }
+            }
+          }
+        }
+      }
+      
+      if (!result) throw new Error('No result received');
+      return result;
+    }
+  } else if (data.transcript) {
+    formData.append('transcript', data.transcript);
+  }
+  
+  if (data.model_id) {
+    formData.append('model_id', data.model_id);
+  }
+  
+  // Use streaming for text transcripts too
   const response = await fetch(`${API_BASE_URL}/osce/analyze-transcript`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
+    body: formData,
   });
-  return handleResponse<AnalyzeResponse>(response);
+  
+  if (!response.ok) {
+    const error: ApiError = await response.json().catch(() => ({
+      detail: `HTTP error! status: ${response.status}`,
+    }));
+    throw new Error(error.detail || error.error || 'An error occurred');
+  }
+  
+  // Handle streaming response
+  const reader = response.body?.getReader();
+  const decoder = new TextDecoder();
+  let result: AnalyzeResponse | null = null;
+  
+  if (reader) {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n');
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+          
+          const eventData = JSON.parse(jsonStr);
+          
+          // Call progress callback
+          if (onProgress && eventData.message) {
+            onProgress(eventData.message);
+          }
+          
+          if (eventData.status === 'complete') {
+            result = { 
+              success: true, 
+              report_id: eventData.report_id, 
+              message: eventData.message 
+            };
+          } else if (eventData.status === 'error') {
+            throw new Error(eventData.message);
+          }
+        }
+      }
+    }
+  }
+  
+  if (!result) throw new Error('No result received');
+  return result;
 }
 
 export async function analyzeVideo(data: AnalyzeVideoRequest): Promise<AnalyzeResponse> {
@@ -77,7 +203,10 @@ export async function analyzeFromS3(
 
       for (const line of lines) {
         if (line.startsWith('data: ')) {
-          const data = JSON.parse(line.slice(6));
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+          
+          const data = JSON.parse(jsonStr);
           
           if (data.status === 'processing' && onProgress) {
             onProgress(data.message);
@@ -109,8 +238,20 @@ export async function deleteS3OutputFile(fileKey: string): Promise<{ success: bo
   return handleResponse(response);
 }
 
-export async function getReport(id: string): Promise<OSCEReport> {
-  const response = await fetch(`${API_BASE_URL}/reports/${id}`);
-  return handleResponse<OSCEReport>(response);
+export async function getReport(id: string, retries = 3, delay = 1000): Promise<OSCEReport> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/reports/${id}`);
+      return await handleResponse<OSCEReport>(response);
+    } catch (error) {
+      // If it's the last retry, throw the error
+      if (i === retries - 1) {
+        throw error;
+      }
+      // Wait before retrying (exponential backoff)
+      await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+    }
+  }
+  throw new Error('Failed to fetch report after retries');
 }
 

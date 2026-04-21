@@ -43,6 +43,19 @@ export default function Navbar() {
               Reports
             </NavLink>
 
+            <NavLink
+              to="/benchmark"
+              className={({ isActive }) =>
+                `text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'text-primary-600 border-b-2 border-primary-600 pb-1'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`
+              }
+            >
+              Benchmark
+            </NavLink>
+
             {/* User icon */}
             <NavLink
               to="/signin"

@@ -1,445 +1,622 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Tabs from '../components/Tabs';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorMessage from '../components/ErrorMessage';
-import { analyzeTranscript, analyzeVideo, listS3InputFiles, analyzeFromS3, deleteS3InputFile } from '../api/client';
+import AudioRecorder from '../components/AudioRecorder';
+import ConfirmDialog from '../components/ConfirmDialog';
+import ToggleSwitch from '../components/ToggleSwitch';
+import { analyzeTranscript, getReport } from '../api/client';
+import type { OSCEReport } from '../types';
 
-const FILES_PER_PAGE = 5;
+interface SubItem {
+  item: string;
+  status: 'Yes' | 'No' | 'Not Sure';
+  reasoning: string;
+  evidence: string | null;
+  timestamp: string | null;
+  timestamp_end: string | null;
+}
+
+interface ChecklistItem {
+  item: string;
+  has_subitems?: boolean;
+  status?: 'Yes' | 'No' | 'Not Sure';
+  overall_status?: 'Yes' | 'No' | 'Not Sure';
+  threshold?: string;
+  subitems?: SubItem[];
+  evidence?: string | null;
+  timestamp?: string | null;
+  timestamp_end?: string | null;
+}
 
 export default function Analyze() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'transcript' | 'video'>('transcript');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Transcript state
-  const [transcript, setTranscript] = useState('');
-  const [transcriptSource, setTranscriptSource] = useState<'manual' | 's3'>('manual');
-  const [s3Files, setS3Files] = useState<Array<{ key: string; size: number; last_modified: string }>>([]);
-  const [selectedS3File, setSelectedS3File] = useState<string>('');
-  const [loadingS3Files, setLoadingS3Files] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [selectedModel, setSelectedModel] = useState('us.anthropic.claude-haiku-4-5-20251001-v1:0');
-  const [batchCount, setBatchCount] = useState(1);
-  const [batchProgress, setBatchProgress] = useState<string | null>(null);
+  const [progressMessage, setProgressMessage] = useState<string>('');
+  const [elapsedTime, setElapsedTime] = useState(0);
 
-  // Video state
-  const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [timestamp, setTimestamp] = useState('');
+  const [report, setReport] = useState<OSCEReport | null>(null);
+  const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
+  const [highlightedRange, setHighlightedRange] = useState<{start: string, end: string} | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'issues' | 'review'>('all');
+  const [hasChanges, setHasChanges] = useState(false);
+  const [reviewMode, setReviewMode] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    itemIndex: number;
+    newStatus: 'Yes' | 'No';
+  }>({ isOpen: false, itemIndex: -1, newStatus: 'Yes' });
 
   const models = [
     { id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', name: 'Claude 4.5 Haiku' },
     { id: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', name: 'Claude 4.5 Sonnet' },
     { id: 'us.anthropic.claude-opus-4-6-v1', name: 'Claude 4.6 Opus' },
+    { id: 'us.meta.llama4-maverick-17b-instruct-v1:0', name: 'Llama 4 Maverick' },
+    { id: 'us.meta.llama4-scout-17b-instruct-v1:0', name: 'Llama 4 Scout' },
+    { id: 'qwen.qwen3-next-80b-a3b', name: 'Qwen 3 Next 80B' },
+    { id: 'deepseek.v3.2', name: 'DeepSeek V3.2' },
+    { id: 'us.mistral.pixtral-large-2502-v1:0', name: 'Mistral Pixtral Large' },
   ];
 
   useEffect(() => {
-    if (activeTab === 'transcript') {
-      loadS3Files();
+    let interval: NodeJS.Timeout;
+    if (loading) {
+      setElapsedTime(0);
+      interval = setInterval(() => {
+        setElapsedTime(prev => prev + 1);
+      }, 1000);
     }
-  }, [activeTab]);
+    return () => clearInterval(interval);
+  }, [loading]);
 
-  const loadS3Files = async () => {
-    setLoadingS3Files(true);
-    try {
-      const response = await listS3InputFiles();
-      setS3Files(response.files);
-    } catch (err) {
-      console.error('Failed to load S3 files:', err);
-    } finally {
-      setLoadingS3Files(false);
-    }
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleDeleteS3File = async (fileKey: string) => {
-    if (!confirm(`Delete ${fileKey}?`)) return;
-    
-    try {
-      await deleteS3InputFile(fileKey);
-      await loadS3Files(); // Refresh list
-      if (selectedS3File === fileKey) {
-        setSelectedS3File('');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete file');
-    }
+  const handleRecordingComplete = (audioBlob: Blob, filename: string) => {
+    const file = new File([audioBlob], filename, { type: 'audio/webm' });
+    setTranscriptFile(file);
+    setError(null);
   };
 
-  // Filter and paginate files
-  const filteredFiles = s3Files.filter(file => 
-    file.key.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-  const totalPages = Math.ceil(filteredFiles.length / FILES_PER_PAGE);
-  const paginatedFiles = filteredFiles.slice(
-    (currentPage - 1) * FILES_PER_PAGE,
-    currentPage * FILES_PER_PAGE
-  );
-
-  const handleTranscriptFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && file.type === 'text/plain') {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setTranscript(event.target?.result as string);
-      };
-      reader.readAsText(file);
-    } else {
-      setError('Please upload a .txt file');
-    }
+  const handleDiscard = () => {
+    setTranscriptFile(null);
+    setError(null);
   };
 
-  const handleVideoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setVideoFile(file);
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      const validExtensions = ['txt', 'mp3', 'wav', 'm4a', 'flac', 'ogg', 'webm'];
+      
+      if (validExtensions.includes(ext || '')) {
+        setTranscriptFile(file);
+        setError(null);
+      } else {
+        setError('Please upload a .txt or audio file (.mp3, .wav, .m4a, .flac, .ogg)');
+      }
     }
   };
 
-  const handleTranscriptSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (transcriptSource === 's3' && !selectedS3File) {
-      setError('Please select a file from S3');
-      return;
-    }
-    
-    if (transcriptSource === 'manual' && !transcript.trim()) {
-      setError('Please enter or upload a transcript');
+    if (!transcriptFile) {
+      setError('Please upload a file or record audio first');
       return;
     }
 
     setLoading(true);
     setError(null);
-    setBatchProgress(null);
+    setProgressMessage('Starting analysis...');
+    setReport(null);
 
     try {
-      let response;
-      if (transcriptSource === 's3') {
-        response = await analyzeFromS3(
-          selectedS3File, 
-          selectedModel, 
-          batchCount,
-          (message) => setBatchProgress(message)
-        );
-      } else {
-        response = await analyzeTranscript({ transcript, model_id: selectedModel });
-      }
+      const response = await analyzeTranscript(
+        { 
+          file: transcriptFile, 
+          model_id: selectedModel 
+        },
+        (message) => setProgressMessage(message)
+      );
+      
+      const reportData = await getReport(response.report_id);
+      
+      // Redirect to full report view instead of showing inline
       navigate(`/reports/${response.report_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to analyze transcript');
     } finally {
       setLoading(false);
-      setBatchProgress(null);
+      setProgressMessage('');
     }
   };
 
-  const handleVideoSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!videoFile) {
-      setError('Please upload a video file');
-      return;
+  const scrollToTimestamp = (timestamp: string, timestamp_end?: string | null) => {
+    // Clear previous highlights first
+    setHighlightedRange(null);
+    
+    // Set new highlight
+    if (timestamp_end) {
+      setHighlightedRange({start: timestamp, end: timestamp_end});
     }
+    
+    const element = document.getElementById(`timestamp-${timestamp.replace(/:/g, '-')}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
 
-    setLoading(true);
+  const clearHighlight = () => {
+    setHighlightedRange(null);
+  };
+
+  const resetAnalysis = () => {
+    setReport(null);
+    setChecklist([]);
+    setTranscriptFile(null);
     setError(null);
-
-    try {
-      const timestampNum = timestamp ? parseFloat(timestamp) : undefined;
-      const response = await analyzeVideo({
-        video_file: videoFile,
-        timestamp: timestampNum,
-      });
-      navigate(`/reports/${response.report_id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to analyze video');
-    } finally {
-      setLoading(false);
-    }
+    setStatusFilter('all');
   };
 
-  const tabs = [
-    { id: 'transcript', label: 'Transcript Analysis' },
-    { id: 'video', label: 'Video Analysis' },
-  ];
+  const getStats = () => {
+    const yesCount = checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'Yes').length;
+    const noCount = checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'No').length;
+    const notSureCount = checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'Not Sure').length;
+    const score = checklist.length > 0 ? Math.round((yesCount / checklist.length) * 100) : 0;
+    return { yesCount, noCount, notSureCount, score };
+  };
 
-  return (
-    <div className="min-h-screen bg-gray-50 py-12">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="card">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">OSCE Analysis</h1>
-          
-          <Tabs tabs={tabs} activeTab={activeTab} onTabChange={(id) => setActiveTab(id as 'transcript' | 'video')} />
+  const getFilteredChecklist = () => {
+    if (statusFilter === 'completed') return checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'Yes');
+    if (statusFilter === 'issues') return checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'No');
+    if (statusFilter === 'review') return checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'Not Sure');
+    return checklist;
+  };
 
-          {error && <ErrorMessage message={error} />}
+  const exportToCSV = () => {
+    const headers = ['#', 'Item', 'Status', 'Evidence', 'Timestamp'];
+    const rows: string[][] = [];
+    
+    checklist.forEach((item, idx) => {
+      if (item.has_subitems && item.subitems) {
+        // Add parent item with overall status
+        rows.push([
+          String(idx + 1),
+          item.item.replace(/\s*\([^)]*\)/g, '').replace(/\s*-\s*must ask.*$/i, ''),
+          item.overall_status || 'Not Sure',
+          item.threshold || '',
+          ''
+        ]);
+        // Add sub-items with letter notation
+        item.subitems.forEach((sub) => {
+          const match = sub.item.match(/^(\d+[a-z])\.\s*(.+)$/);
+          const subId = match ? match[1] : sub.item.substring(0, 2);
+          const subText = match ? match[2] : sub.item;
+          rows.push([
+            subId,
+            subText,
+            sub.status,
+            sub.evidence || '-',
+            sub.timestamp || '-'
+          ]);
+        });
+      } else {
+        // Regular item
+        rows.push([
+          String(idx + 1),
+          item.item.replace(/\s*\([^)]*\)/g, ''),
+          item.status || 'Not Sure',
+          item.evidence || '-',
+          item.timestamp || '-'
+        ]);
+      }
+    });
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `osce-report-${report?.id || 'export'}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
-          {batchProgress && (
-            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-sm font-medium text-blue-900">
-                {batchProgress}
+  const handleStatusChange = (index: number, newStatus: 'Yes' | 'No') => {
+    const item = checklist[index];
+    const itemStatus = item.has_subitems ? item.overall_status : item.status;
+    if (itemStatus !== 'Not Sure') return;
+    setConfirmDialog({ isOpen: true, itemIndex: index, newStatus });
+  };
+
+  const confirmStatusChange = () => {
+    const { itemIndex, newStatus } = confirmDialog;
+    const updated = [...checklist];
+    if (updated[itemIndex].has_subitems) {
+      updated[itemIndex] = { ...updated[itemIndex], overall_status: newStatus };
+    } else {
+      updated[itemIndex] = { ...updated[itemIndex], status: newStatus };
+    }
+    setChecklist(updated);
+    setHasChanges(true);
+    setConfirmDialog({ isOpen: false, itemIndex: -1, newStatus: 'Yes' });
+  };
+
+  const cancelStatusChange = () => {
+    setConfirmDialog({ isOpen: false, itemIndex: -1, newStatus: 'Yes' });
+  };
+
+  if (report) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="mb-6 flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">OSCE Analysis Report</h1>
+              <p className="text-xl text-gray-700 mt-2">
+                {report.source_file || 'Unknown Source'}
               </p>
+              <p className="text-sm text-gray-500 mt-1">
+                Report ID: {report.id} • Created: {new Date(report.created_at).toLocaleString()}
+              </p>
+              {hasChanges && (
+                <p className="text-sm text-orange-600 mt-1 font-medium">
+                  ⚠ You have unsaved manual changes
+                </p>
+              )}
             </div>
-          )}
+            <button onClick={resetAnalysis} className="btn-secondary">
+              ← New Analysis
+            </button>
+          </div>
 
-          {loading ? (
-            <LoadingSpinner />
-          ) : (
-            <>
-              {activeTab === 'transcript' && (
-                <form onSubmit={handleTranscriptSubmit} className="mt-6">
-                  <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-700 mb-3">
-                      Transcript Source
-                    </label>
-                    <div className="flex gap-4 mb-4">
-                      <label className="flex items-center">
-                        <input
-                          type="radio"
-                          value="manual"
-                          checked={transcriptSource === 'manual'}
-                          onChange={(e) => setTranscriptSource(e.target.value as 'manual' | 's3')}
-                          className="mr-2"
-                        />
-                        Manual Input / Upload File
-                      </label>
-                      <label className="flex items-center">
-                        <input
-                          type="radio"
-                          value="s3"
-                          checked={transcriptSource === 's3'}
-                          onChange={(e) => setTranscriptSource(e.target.value as 'manual' | 's3')}
-                          className="mr-2"
-                        />
-                        Select from S3
-                      </label>
-                    </div>
-                  </div>
+          {/* Summary Statistics */}
+          <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="card text-center bg-emerald-50">
+              <div className="text-3xl font-bold text-emerald-600 mb-1">{getStats().yesCount}</div>
+              <div className="text-sm font-medium text-emerald-700">✓ Completed</div>
+            </div>
+            <div className="card text-center bg-rose-50">
+              <div className="text-3xl font-bold text-rose-600 mb-1">{getStats().noCount}</div>
+              <div className="text-sm font-medium text-rose-700">✗ Issues</div>
+            </div>
+            <div className="card text-center bg-amber-50">
+              <div className="text-3xl font-bold text-amber-700 mb-1">{getStats().notSureCount}</div>
+              <div className="text-sm font-medium text-amber-800">⚠ Needs Review</div>
+            </div>
+            <div className="card text-center bg-primary-50">
+              <div className="text-3xl font-bold text-primary-600 mb-1">{getStats().score}%</div>
+              <div className="text-sm font-medium text-primary-700">Overall Score</div>
+            </div>
+          </div>
 
-                  {transcriptSource === 'manual' ? (
-                    <>
-                      <div className="mb-6">
-                        <label htmlFor="transcript" className="block text-sm font-medium text-gray-700 mb-2">
-                          Transcript
-                        </label>
-                        <textarea
-                          id="transcript"
-                          value={transcript}
-                          onChange={(e) => setTranscript(e.target.value)}
-                          rows={12}
-                          className="input-field"
-                          placeholder="Paste your OSCE transcript here..."
-                        />
-                      </div>
-
-                      <div className="mb-6">
-                        <label htmlFor="transcript-file" className="block text-sm font-medium text-gray-700 mb-2">
-                          Or upload a .txt file
-                        </label>
-                        <input
-                          id="transcript-file"
-                          type="file"
-                          accept=".txt"
-                          onChange={handleTranscriptFileChange}
-                          className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100"
-                        />
-                      </div>
-                    </>
-                  ) : (
-                    <div className="mb-6">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Select Transcript from S3
-                      </label>
-                      {loadingS3Files ? (
-                        <p className="text-gray-600">Loading files...</p>
-                      ) : (
-                        <>
-                          {s3Files.length === 0 ? (
-                            <p className="text-sm text-gray-500">
-                              No files found. Upload files to austrich-ai-input bucket.
-                            </p>
-                          ) : (
-                            <>
-                              <input
-                                type="text"
-                                placeholder="Search files..."
-                                value={searchQuery}
-                                onChange={(e) => {
-                                  setSearchQuery(e.target.value);
-                                  setCurrentPage(1);
-                                }}
-                                className="input-field mb-3"
-                              />
-                              <div className="space-y-2 mb-3 max-h-96 overflow-y-auto border rounded-lg p-3">
-                                {paginatedFiles.length === 0 ? (
-                                  <p className="text-sm text-gray-500">No files match your search.</p>
-                                ) : (
-                                  paginatedFiles.map((file) => (
-                                    <div
-                                      key={file.key}
-                                      className={`flex items-center justify-between p-3 rounded border cursor-pointer hover:bg-gray-50 ${
-                                        selectedS3File === file.key ? 'border-primary-500 bg-primary-50' : 'border-gray-200'
-                                      }`}
-                                      onClick={() => setSelectedS3File(file.key)}
-                                    >
-                                      <div className="flex-1">
-                                        <p className="font-medium text-sm">{file.key}</p>
-                                        <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDeleteS3File(file.key);
-                                        }}
-                                        className="ml-3 text-red-600 hover:text-red-800"
-                                        title="Delete file"
-                                      >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                          <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                                        </svg>
-                                      </button>
-                                    </div>
-                                  ))
-                                )}
+          {/* Checklist Table */}
+          <div className="card mb-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-semibold text-gray-900">Critical Data Gathering & Exam Checklist</h2>
+              <div className="flex space-x-2">
+                <button onClick={exportToCSV} className="text-sm btn-secondary">
+                  Export CSV
+                </button>
+                <a href={`http://localhost:8000/reports/${report.id}/pdf`} download className="text-sm btn-primary">
+                  Download PDF
+                </a>
+              </div>
+            </div>
+            
+            {/* Filter Buttons */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    statusFilter === 'all'
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Show All ({checklist.length})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('completed')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    statusFilter === 'completed'
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Completed ({getStats().yesCount})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('issues')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    statusFilter === 'issues'
+                      ? 'bg-red-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Issues ({getStats().noCount})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('review')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    statusFilter === 'review'
+                      ? 'bg-yellow-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Needs Review ({getStats().notSureCount})
+                </button>
+              </div>
+              
+              {/* Review Mode Toggle */}
+              <ToggleSwitch
+                checked={reviewMode}
+                onChange={setReviewMode}
+                label={reviewMode ? '✓ Review Mode Active' : 'Enable Review Mode'}
+              />
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-primary-600">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">#</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Item</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-white uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Evidence</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {getFilteredChecklist().map((item) => {
+                    const originalIdx = checklist.indexOf(item);
+                    const itemStatus = item.has_subitems ? item.overall_status : item.status;
+                    return (
+                    <tr key={originalIdx} className={originalIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{originalIdx + 1}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">{item.item.replace(/\s*\([^)]*\)/g, '')}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        {itemStatus === 'Yes' && (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                            ✓ Yes
+                          </span>
+                        )}
+                        {itemStatus === 'No' && (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
+                            ✗ No
+                          </span>
+                        )}
+                        {itemStatus === 'Not Sure' && (
+                          <div className="flex items-center justify-center space-x-2">
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+                              ⚠ Not Sure
+                            </span>
+                            {reviewMode && (
+                              <div className="flex space-x-1">
+                                <button
+                                  onClick={() => handleStatusChange(originalIdx, 'Yes')}
+                                  className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+                                  title="Mark as Yes"
+                                >
+                                  ✓
+                                </button>
+                                <button
+                                  onClick={() => handleStatusChange(originalIdx, 'No')}
+                                  className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                                  title="Mark as No"
+                                >
+                                  ✗
+                                </button>
                               </div>
-                              {totalPages > 1 && (
-                                <div className="flex items-center justify-between text-sm">
-                                  <button
-                                    type="button"
-                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                                    disabled={currentPage === 1}
-                                    className="btn-secondary disabled:opacity-50"
-                                  >
-                                    Previous
-                                  </button>
-                                  <span className="text-gray-600">
-                                    Page {currentPage} of {totalPages} ({filteredFiles.length} files)
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-700">
+                        {item.has_subitems && item.subitems ? (
+                          <div className="space-y-2">
+                            <div className="text-xs text-gray-500 font-medium">{item.threshold}</div>
+                            {item.subitems.map((sub, idx) => (
+                              <div key={idx} className="pl-3 border-l-2 border-gray-300">
+                                <div className="flex items-start gap-2">
+                                  <span className={`text-xs font-medium ${
+                                    sub.status === 'Yes' ? 'text-green-600' : 
+                                    sub.status === 'No' ? 'text-red-600' : 'text-yellow-600'
+                                  }`}>
+                                    {sub.status === 'Yes' ? '✓' : sub.status === 'No' ? '✗' : '⚠'}
                                   </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                                    disabled={currentPage === totalPages}
-                                    className="btn-secondary disabled:opacity-50"
-                                  >
-                                    Next
-                                  </button>
+                                  <div className="flex-1">
+                                    <div className="text-xs font-medium text-gray-700">{sub.item.replace(/^\d+[a-z]\.\s*/, '')}</div>
+                                    {sub.evidence && (
+                                      <p className="text-xs text-gray-600 italic mt-1">"{sub.evidence}"</p>
+                                    )}
+                                    {sub.timestamp && (
+                                      <button
+                                        onClick={() => scrollToTimestamp(sub.timestamp!, sub.timestamp_end)}
+                                        className="text-xs text-primary-600 hover:text-primary-800 mt-1 underline"
+                                      >
+                                        {sub.timestamp}
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
-                              )}
-                            </>
-                          )}
-                          <button
-                            type="button"
-                            onClick={loadS3Files}
-                            className="btn-secondary mt-3"
-                          >
-                            Refresh Files
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : item.evidence ? (
+                          <div>
+                            <p className="italic">"{item.evidence}"</p>
+                            {item.timestamp && (
+                              <button
+                                onClick={() => scrollToTimestamp(item.timestamp!, item.timestamp_end)}
+                                className="text-xs text-primary-600 hover:text-primary-800 mt-1 underline"
+                              >
+                                Jump to {item.timestamp}
+                                {item.timestamp_end && ` - ${item.timestamp_end}`}
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
-                  <div className="mb-6">
-                    <label htmlFor="model" className="block text-sm font-medium text-gray-700 mb-2">
-                      AI Model
-                    </label>
-                    <select
-                      id="model"
-                      value={selectedModel}
-                      onChange={(e) => setSelectedModel(e.target.value)}
-                      className="input-field"
+          {/* Transcript Viewer */}
+          {report.transcript && (
+            <div className="card">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-semibold text-gray-900">Transcript</h2>
+                {highlightedRange && (
+                  <button onClick={clearHighlight} className="text-sm text-gray-600 hover:text-gray-800">
+                    Clear Highlight
+                  </button>
+                )}
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
+                {report.transcript.split('\n').map((line, idx) => {
+                  const timestampMatch = line.match(/\[(\d{2}:\d{2}:\d{2})/);
+                  const timestamp = timestampMatch ? timestampMatch[1] : null;
+                  
+                  let isHighlighted = false;
+                  if (highlightedRange && timestamp) {
+                    isHighlighted = timestamp >= highlightedRange.start && timestamp <= highlightedRange.end;
+                  }
+                  
+                  return (
+                    <div
+                      key={idx}
+                      id={timestamp ? `timestamp-${timestamp.replace(/:/g, '-')}` : undefined}
+                      className={`py-1 px-2 rounded transition-colors ${isHighlighted ? 'bg-yellow-200' : ''}`}
                     >
-                      {models.map((model) => (
-                        <option key={model.id} value={model.id}>
-                          {model.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {transcriptSource === 's3' && (
-                    <div className="mb-6">
-                      <label htmlFor="batch" className="block text-sm font-medium text-gray-700 mb-2">
-                        Batch Run (1-10 runs)
-                      </label>
-                      <input
-                        id="batch"
-                        type="number"
-                        min="1"
-                        max="10"
-                        value={batchCount}
-                        onChange={(e) => setBatchCount(parseInt(e.target.value) || 1)}
-                        className="input-field"
-                      />
-                      <p className="mt-1 text-sm text-gray-500">
-                        Run the same transcript multiple times for consistency testing
-                      </p>
+                      <span className="text-xs text-gray-500 font-mono mr-2">{timestamp || ''}</span>
+                      <span className="text-sm text-gray-800">{line.replace(/\[.*?\]/, '')}</span>
                     </div>
-                  )}
-
-                  <button
-                    type="submit"
-                    disabled={loading || (transcriptSource === 'manual' ? !transcript.trim() : !selectedS3File)}
-                    className="btn-primary w-full sm:w-auto"
-                  >
-                    Analyze Transcript
-                  </button>
-                </form>
-              )}
-
-              {activeTab === 'video' && (
-                <form onSubmit={handleVideoSubmit} className="mt-6">
-                  <div className="mb-6">
-                    <label htmlFor="video-file" className="block text-sm font-medium text-gray-700 mb-2">
-                      Video File
-                    </label>
-                    <input
-                      id="video-file"
-                      type="file"
-                      accept="video/*"
-                      onChange={handleVideoFileChange}
-                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100"
-                    />
-                    {videoFile && (
-                      <p className="mt-2 text-sm text-gray-600">
-                        Selected: {videoFile.name}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="mb-6">
-                    <label htmlFor="timestamp" className="block text-sm font-medium text-gray-700 mb-2">
-                      Timestamp (seconds) - Optional
-                    </label>
-                    <input
-                      id="timestamp"
-                      type="number"
-                      value={timestamp}
-                      onChange={(e) => setTimestamp(e.target.value)}
-                      min="0"
-                      step="0.1"
-                      className="input-field"
-                      placeholder="e.g., 120.5"
-                    />
-                    <p className="mt-1 text-sm text-gray-500">
-                      Specify a timestamp in seconds to analyze a specific moment in the video
-                    </p>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={loading || !videoFile}
-                    className="btn-primary w-full sm:w-auto"
-                  >
-                    Analyze Video
-                  </button>
-                </form>
-              )}
-            </>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-12">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="card">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">OSCE Analysis</h1>
+          <p className="text-gray-600 mb-8">Record or upload an OSCE session for AI-powered evaluation</p>
+
+          {error && <ErrorMessage message={error} />}
+
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="text-5xl font-bold text-primary-600 mb-4">{formatTime(elapsedTime)}</div>
+              {progressMessage && (
+                <p className="mt-4 text-sm text-gray-600">{progressMessage}</p>
+              )}
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-900 mb-3">Record Audio</label>
+                <AudioRecorder onRecordingComplete={handleRecordingComplete} onDiscard={handleDiscard} />
+              </div>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300"></div>
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-white text-gray-500">or</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-900 mb-3">Upload File</label>
+                <input
+                  type="file"
+                  accept=".txt,.mp3,.wav,.m4a,.flac,.ogg,.webm"
+                  onChange={handleFileChange}
+                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100"
+                />
+                <p className="mt-2 text-xs text-gray-500">
+                  Transcript (.txt) or Audio (.mp3, .wav, .m4a, .flac, .ogg, .webm)
+                </p>
+              </div>
+
+              {transcriptFile && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    <p className="text-sm text-green-800 font-medium">Ready: {transcriptFile.name}</p>
+                  </div>
+                  <button
+                    onClick={() => setTranscriptFile(null)}
+                    className="text-sm text-red-600 hover:text-red-800 font-medium"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="model" className="block text-sm font-medium text-gray-700 mb-2">
+                  AI Model
+                </label>
+                <select
+                  id="model"
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="input-field"
+                >
+                  {models.map((model) => (
+                    <option key={model.id} value={model.id}>{model.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading || !transcriptFile}
+                className="btn-primary w-full py-3 text-lg"
+              >
+                Analyze OSCE
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title="Confirm Status Change"
+        message={`Change status from "Not Sure" to "${confirmDialog.newStatus}" for item #${confirmDialog.itemIndex + 1}?\n\nThis will mark the item as manually reviewed.`}
+        onConfirm={confirmStatusChange}
+        onCancel={cancelStatusChange}
+        confirmText={`Mark as ${confirmDialog.newStatus}`}
+        confirmColor={confirmDialog.newStatus === 'Yes' ? 'green' : 'red'}
+      />
     </div>
   );
 }

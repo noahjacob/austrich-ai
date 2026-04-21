@@ -2,7 +2,7 @@
 .env
 
 # Reports directory (exclude generated reports)
-reports/*.json
+reports/
 
 # Python
 __pycache__/

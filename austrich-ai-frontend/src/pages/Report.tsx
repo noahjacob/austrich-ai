@@ -4,6 +4,67 @@ import { getReport } from '../api/client';
 import type { OSCEReport } from '../types';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorMessage from '../components/ErrorMessage';
+import ConfirmDialog from '../components/ConfirmDialog';
+import ToggleSwitch from '../components/ToggleSwitch';
+
+interface SubItem {
+  item: string;
+  status: 'Yes' | 'No' | 'Not Sure';
+  reasoning: string;
+  confidence_score?: number;
+  confidence_reasoning?: string;
+  evidence: string | null;
+  timestamp: string | null;
+  timestamp_end: string | null;
+}
+
+interface ChecklistItem {
+  item: string;
+  has_subitems?: boolean;
+  status?: 'Yes' | 'No' | 'Not Sure';
+  overall_status?: 'Yes' | 'No' | 'Not Sure';
+  reasoning?: string;
+  confidence_score?: number;
+  confidence_reasoning?: string;
+  threshold?: string;
+  subitems?: SubItem[];
+  evidence?: string | null;
+  timestamp?: string | null;
+  timestamp_end?: string | null;
+}
+
+interface EmpathyItem {
+  score: number;
+  observations: string;
+  strengths: string;
+  areas_for_improvement: string;
+  score_justification: string;
+  evidence_instances: {
+    evidence: string;
+    timestamp: string;
+    timestamp_end?: string;
+  }[];
+}
+
+interface EmpathyData {
+  fostering_relationship: {
+    sets_stage: EmpathyItem;
+    listens_actively: EmpathyItem;
+    shows_compassion: EmpathyItem;
+  };
+  gathering_information: {
+    encouraging_sharing: EmpathyItem;
+  };
+  providing_information: {
+    adjusts_communication: EmpathyItem;
+  };
+  helping_decisions: {
+    gives_ownership: EmpathyItem;
+    makes_plan: EmpathyItem;
+  };
+  overall_score: number;
+  summary: string;
+}
 
 export default function Report() {
   const { id } = useParams<{ id: string }>();
@@ -11,6 +72,20 @@ export default function Report() {
   const [report, setReport] = useState<OSCEReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
+  const [empathyData, setEmpathyData] = useState<EmpathyData | null>(null);
+  const [highlightedTimestamp, setHighlightedTimestamp] = useState<string | null>(null);
+  const [highlightedRange, setHighlightedRange] = useState<{start: string, end: string} | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'issues' | 'review'>('all');
+  const [hasChanges, setHasChanges] = useState(false);
+  const [reviewMode, setReviewMode] = useState(false);
+  const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<'checklist' | 'empathy'>('checklist');
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    itemIndex: number;
+    newStatus: 'Yes' | 'No';
+  }>({ isOpen: false, itemIndex: -1, newStatus: 'Yes' });
 
   useEffect(() => {
     if (!id) {
@@ -25,6 +100,15 @@ export default function Report() {
         const data = await getReport(id);
         console.log('Report data:', data);
         setReport(data);
+        if (data.report) {
+          try {
+            const parsed = JSON.parse(data.report);
+            setChecklist(parsed.checklist || []);
+            setEmpathyData(parsed.empathy_and_communication || null);
+          } catch (e) {
+            console.error('Failed to parse report JSON:', e);
+          }
+        }
       } catch (err) {
         console.error('Error fetching report:', err);
         setError(err instanceof Error ? err.message : 'Failed to load report');
@@ -50,6 +134,178 @@ export default function Report() {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const scrollToTimestamp = (timestamp: string, timestamp_end?: string | null) => {
+    // Clear previous highlights first
+    setHighlightedTimestamp(null);
+    setHighlightedRange(null);
+    
+    // Set new highlight
+    if (timestamp_end) {
+      setHighlightedRange({start: timestamp, end: timestamp_end});
+    } else {
+      setHighlightedTimestamp(timestamp);
+    }
+    
+    // Try exact match first
+    let element = document.getElementById(`timestamp-${timestamp.replace(/:/g, '-')}`);
+    
+    // If not found, find closest timestamp
+    if (!element) {
+      const allTimestamps = Array.from(document.querySelectorAll('[id^="timestamp-"]'));
+      const targetTime = timestamp.split(':').reduce((acc, val) => acc * 60 + parseInt(val), 0);
+      
+      let closest = allTimestamps[0];
+      let minDiff = Infinity;
+      
+      allTimestamps.forEach(el => {
+        const ts = el.id.replace('timestamp-', '').replace(/-/g, ':');
+        const time = ts.split(':').reduce((acc, val) => acc * 60 + parseInt(val), 0);
+        const diff = Math.abs(time - targetTime);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closest = el;
+        }
+      });
+      
+      element = closest as HTMLElement;
+    }
+    
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
+  const clearHighlight = () => {
+    setHighlightedTimestamp(null);
+    setHighlightedRange(null);
+  };
+
+  const getStats = () => {
+    const yesCount = checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'Yes').length;
+    const noCount = checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'No').length;
+    const notSureCount = checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'Not Sure').length;
+    const score = checklist.length > 0 ? Math.round((yesCount / checklist.length) * 100) : 0;
+    return { yesCount, noCount, notSureCount, score };
+  };
+
+  const getFilteredChecklist = () => {
+    if (statusFilter === 'completed') return checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'Yes');
+    if (statusFilter === 'issues') return checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'No');
+    if (statusFilter === 'review') return checklist.filter(item => (item.has_subitems ? item.overall_status : item.status) === 'Not Sure');
+    return checklist;
+  };
+
+  const exportToCSV = () => {
+    const headers = ['#', 'Item', 'Status', 'Evidence', 'Timestamp'];
+    const rows: string[][] = [];
+    
+    checklist.forEach((item, idx) => {
+      if (item.has_subitems && item.subitems) {
+        // Add parent item with overall status
+        rows.push([
+          String(idx + 1),
+          item.item.replace(/\s*\([^)]*\)/g, '').replace(/\s*-\s*must ask.*$/i, ''),
+          item.overall_status || 'Not Sure',
+          item.threshold || '',
+          ''
+        ]);
+        // Add sub-items with letter notation
+        item.subitems.forEach((sub) => {
+          const match = sub.item.match(/^(\d+[a-z])\.\s*(.+)$/);
+          const subId = match ? match[1] : sub.item.substring(0, 2);
+          const subText = match ? match[2] : sub.item;
+          rows.push([
+            subId,
+            subText,
+            sub.status,
+            sub.evidence || '-',
+            sub.timestamp || '-'
+          ]);
+        });
+      } else {
+        // Regular item
+        rows.push([
+          String(idx + 1),
+          item.item.replace(/\s*\([^)]*\)/g, ''),
+          item.status || 'Not Sure',
+          item.evidence || '-',
+          item.timestamp || '-'
+        ]);
+      }
+    });
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `osce-report-${report?.id || 'export'}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleStatusChange = (index: number, newStatus: 'Yes' | 'No') => {
+    const item = checklist[index];
+    const itemStatus = item.has_subitems ? item.overall_status : item.status;
+    if (itemStatus !== 'Not Sure') return;
+    setConfirmDialog({ isOpen: true, itemIndex: index, newStatus });
+  };
+
+  const confirmStatusChange = () => {
+    const { itemIndex, newStatus } = confirmDialog;
+    const updated = [...checklist];
+    if (updated[itemIndex].has_subitems) {
+      updated[itemIndex] = { ...updated[itemIndex], overall_status: newStatus };
+    } else {
+      updated[itemIndex] = { ...updated[itemIndex], status: newStatus };
+    }
+    setChecklist(updated);
+    setHasChanges(true);
+    setConfirmDialog({ isOpen: false, itemIndex: -1, newStatus: 'Yes' });
+  };
+
+  const cancelStatusChange = () => {
+    setConfirmDialog({ isOpen: false, itemIndex: -1, newStatus: 'Yes' });
+  };
+
+  const toggleReasoning = (key: string) => {
+    setExpandedReasoning(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(key)) {
+        newSet.delete(key);
+      } else {
+        newSet.add(key);
+      }
+      return newSet;
+    });
+  };
+
+  const getConfidenceColor = (score: number) => {
+    if (score >= 70) return 'text-orange-600';
+    if (score >= 40) return 'text-amber-600';
+    return 'text-red-600';
+  };
+
+  const getScoreBadgeColor = (score: number) => {
+    if (score === 5) return 'bg-green-600 text-white';
+    if (score === 4) return 'bg-green-400 text-white';
+    if (score === 3) return 'bg-yellow-500 text-white';
+    if (score === 2) return 'bg-orange-500 text-white';
+    return 'bg-red-600 text-white';
+  };
+
+  const getScoreLabel = (score: number) => {
+    if (score === 5) return 'Desired (Gold Standard)';
+    if (score === 4) return 'Needs Minimal Adjustment';
+    if (score === 3) return 'Skills Developing (Passing)';
+    if (score === 2) return 'Needs Significant Adjustment';
+    return 'Unsatisfactory';
   };
 
   if (loading) {
@@ -92,25 +348,502 @@ export default function Report() {
           <p className="text-gray-600 mt-2">
             Report ID: {report.id} • Created: {new Date(report.created_at).toLocaleString()}
           </p>
+          {hasChanges && (
+            <p className="text-sm text-orange-600 mt-1 font-medium">
+              ⚠ You have unsaved manual changes
+            </p>
+          )}
         </div>
 
         {/* If text report exists, display it as markdown */}
         {report.report ? (
-          <div className="card">
-            <div className="prose max-w-none" style={{ whiteSpace: 'pre-wrap' }}>
-              {report.report}
+          <>
+            {/* Summary Statistics */}
+            <div className="grid grid-cols-4 gap-4 mb-6">
+              <div className="card text-center bg-emerald-50">
+                <div className="text-3xl font-bold text-emerald-600 mb-1">{getStats().yesCount}</div>
+                <div className="text-sm font-medium text-emerald-700">✓ Completed</div>
+              </div>
+              <div className="card text-center bg-rose-50">
+                <div className="text-3xl font-bold text-rose-600 mb-1">{getStats().noCount}</div>
+                <div className="text-sm font-medium text-rose-700">✗ Issues</div>
+              </div>
+              <div className="card text-center bg-amber-50">
+                <div className="text-3xl font-bold text-amber-700 mb-1">{getStats().notSureCount}</div>
+                <div className="text-sm font-medium text-amber-800">⚠ Needs Review</div>
+              </div>
+              <div className="card text-center bg-primary-50">
+                <div className="text-3xl font-bold text-primary-600 mb-1">{getStats().score}%</div>
+                <div className="text-sm font-medium text-primary-700">Overall Score</div>
+              </div>
             </div>
+
+            {/* Tabs */}
+            <div className="card mb-6">
+              <div className="border-b border-gray-200 mb-4">
+                <nav className="-mb-px flex space-x-8">
+                  <button
+                    onClick={() => setActiveTab('checklist')}
+                    className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                      activeTab === 'checklist'
+                        ? 'border-primary-500 text-primary-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    Clinical Checklist
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('empathy')}
+                    className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                      activeTab === 'empathy'
+                        ? 'border-primary-500 text-primary-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    Empathy & Communication
+                  </button>
+                </nav>
+              </div>
+
+              {activeTab === 'checklist' && (
+                <>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-semibold text-gray-900">Critical Data Gathering & Exam Checklist</h2>
+                <div className="flex space-x-2">
+                  <button onClick={exportToCSV} className="btn-secondary">
+                    Export CSV
+                  </button>
+                  <a
+                    href={`http://localhost:8000/reports/${report.id}/pdf`}
+                    download
+                    className="btn-primary"
+                  >
+                    Download PDF
+                  </a>
+                </div>
+              </div>
+              
+              {/* Filter Buttons */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => setStatusFilter('all')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      statusFilter === 'all'
+                        ? 'bg-primary-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Show All ({checklist.length})
+                  </button>
+                  <button
+                    onClick={() => setStatusFilter('completed')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      statusFilter === 'completed'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Completed ({getStats().yesCount})
+                  </button>
+                  <button
+                    onClick={() => setStatusFilter('issues')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      statusFilter === 'issues'
+                        ? 'bg-red-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Issues ({getStats().noCount})
+                  </button>
+                  <button
+                    onClick={() => setStatusFilter('review')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      statusFilter === 'review'
+                        ? 'bg-yellow-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Needs Review ({getStats().notSureCount})
+                  </button>
+                </div>
+                
+                {/* Review Mode Toggle */}
+                <ToggleSwitch
+                  checked={reviewMode}
+                  onChange={setReviewMode}
+                  label={reviewMode ? '✓ Review Mode Active' : 'Enable Review Mode'}
+                />
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-primary-600">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
+                        #
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
+                        Item
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-white uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
+                        Evidence
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {getFilteredChecklist().map((item) => {
+                      const originalIdx = checklist.indexOf(item);
+                      const itemStatus = item.has_subitems ? item.overall_status : item.status;
+                      return (
+                      <tr key={originalIdx} className={originalIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {originalIdx + 1}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-900">
+                          {item.item.replace(/\s*\([^)]*\)/g, '')}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          {itemStatus === 'Yes' && (
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                              ✓ Yes
+                            </span>
+                          )}
+                          {itemStatus === 'No' && (
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
+                              ✗ No
+                            </span>
+                          )}
+                          {itemStatus === 'Not Sure' && (
+                            <div className="flex items-center justify-center space-x-2">
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+                                ⚠ Not Sure
+                              </span>
+                              {reviewMode && (
+                                <div className="flex space-x-1">
+                                  <button
+                                    onClick={() => handleStatusChange(originalIdx, 'Yes')}
+                                    className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+                                    title="Mark as Yes"
+                                  >
+                                    ✓
+                                  </button>
+                                  <button
+                                    onClick={() => handleStatusChange(originalIdx, 'No')}
+                                    className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                                    title="Mark as No"
+                                  >
+                                    ✗
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-700">
+                          {item.has_subitems && item.subitems ? (
+                            <div className="space-y-2">
+                              <div className="text-xs text-gray-500 font-medium">{item.threshold}</div>
+                              {item.subitems.map((sub, idx) => (
+                                <div key={idx} className="pl-3 border-l-2 border-gray-300">
+                                  <div className="flex items-start gap-2">
+                                    <span className={`text-xs font-medium ${
+                                      sub.status === 'Yes' ? 'text-green-600' : 
+                                      sub.status === 'No' ? 'text-red-600' : 'text-yellow-600'
+                                    }`}>
+                                      {sub.status === 'Yes' ? '✓' : sub.status === 'No' ? '✗' : '⚠'}
+                                    </span>
+                                    <div className="flex-1">
+                                      <div className="text-xs font-medium text-gray-700">{sub.item.replace(/^\d+[a-z]\.\s*/, '')}</div>
+                                      {sub.status === 'Not Sure' && sub.confidence_score !== undefined && (
+                                        <div className="mt-1 flex items-center gap-2">
+                                          <span className="text-xs font-semibold text-amber-600">
+                                            {sub.confidence_score}% confidence
+                                          </span>
+                                          <div className="flex-1 max-w-[100px] bg-gray-200 rounded-full h-1.5">
+                                            <div
+                                              className={`h-1.5 rounded-full ${
+                                                sub.confidence_score >= 70 ? 'bg-orange-400' :
+                                                sub.confidence_score >= 40 ? 'bg-amber-400' : 'bg-red-400'
+                                              }`}
+                                              style={{ width: `${sub.confidence_score}%` }}
+                                            ></div>
+                                          </div>
+                                        </div>
+                                      )}
+                                      {sub.status === 'Not Sure' && sub.confidence_reasoning && (
+                                        <div className="mt-1.5">
+                                          <button
+                                            onClick={() => toggleReasoning(`sub-conf-${originalIdx}-${idx}`)}
+                                            className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+                                          >
+                                            <span>{expandedReasoning.has(`sub-conf-${originalIdx}-${idx}`) ? '▼' : '▶'}</span>
+                                            <span>{expandedReasoning.has(`sub-conf-${originalIdx}-${idx}`) ? 'Hide' : 'Show'} confidence reasoning</span>
+                                          </button>
+                                          {expandedReasoning.has(`sub-conf-${originalIdx}-${idx}`) && (
+                                            <div className="mt-1.5 p-2.5 rounded-md bg-blue-50 border border-blue-200 text-xs text-gray-700 leading-relaxed">
+                                              {sub.confidence_reasoning}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                      {sub.evidence && (
+                                        <p className="text-xs text-gray-600 italic mt-1.5">"{sub.evidence}"</p>
+                                      )}
+                                      {sub.timestamp && (
+                                        <button
+                                          onClick={() => scrollToTimestamp(sub.timestamp!, sub.timestamp_end)}
+                                          className="text-xs text-primary-600 hover:text-primary-800 mt-1 underline"
+                                        >
+                                          {sub.timestamp}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div>
+                              {item.status === 'Not Sure' && item.confidence_score !== undefined && (
+                                <div className="mb-2 flex items-center gap-2">
+                                  <span className="text-xs font-semibold text-amber-600">
+                                    {item.confidence_score}% confidence
+                                  </span>
+                                  <div className="flex-1 max-w-[120px] bg-gray-200 rounded-full h-1.5">
+                                    <div
+                                      className={`h-1.5 rounded-full ${
+                                        item.confidence_score >= 70 ? 'bg-orange-400' :
+                                        item.confidence_score >= 40 ? 'bg-amber-400' : 'bg-red-400'
+                                      }`}
+                                      style={{ width: `${item.confidence_score}%` }}
+                                    ></div>
+                                  </div>
+                                </div>
+                              )}
+                              {item.status === 'Not Sure' && item.confidence_reasoning && (
+                                <div className="mb-2">
+                                  <button
+                                    onClick={() => toggleReasoning(`item-conf-${originalIdx}`)}
+                                    className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+                                  >
+                                    <span>{expandedReasoning.has(`item-conf-${originalIdx}`) ? '▼' : '▶'}</span>
+                                    <span>{expandedReasoning.has(`item-conf-${originalIdx}`) ? 'Hide' : 'Show'} confidence reasoning</span>
+                                  </button>
+                                  {expandedReasoning.has(`item-conf-${originalIdx}`) && (
+                                    <div className="mt-1.5 p-2.5 rounded-md bg-blue-50 border border-blue-200 text-xs text-gray-700 leading-relaxed">
+                                      {item.confidence_reasoning}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {item.evidence ? (
+                                <div>
+                                  <p className="italic">"{item.evidence}"</p>
+                                  {item.timestamp && (
+                                    <button
+                                      onClick={() => scrollToTimestamp(item.timestamp!, item.timestamp_end)}
+                                      className="text-xs text-primary-600 hover:text-primary-800 mt-1 underline"
+                                    >
+                                      Jump to {item.timestamp}
+                                      {item.timestamp_end && ` - ${item.timestamp_end}`}
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+                </>
+              )}
+
+              {activeTab === 'empathy' && (
+                <>
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-2xl font-semibold text-gray-900">Empathy & Communication Evaluation</h2>
+                  </div>
+                  {empathyData ? (
+                    <>
+                      {/* Empathy Items Table */}
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-primary-600">
+                            <tr>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
+                                #
+                              </th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
+                                Item
+                              </th>
+                              <th className="px-6 py-3 text-center text-xs font-medium text-white uppercase tracking-wider">
+                                Score
+                              </th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">
+                                Details
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {[
+                              { num: 23, label: 'Sets the stage for encounter', data: empathyData.fostering_relationship.sets_stage },
+                              { num: 25, label: 'Listens actively', data: empathyData.fostering_relationship.listens_actively },
+                              { num: 27, label: 'Shows care and compassion', data: empathyData.fostering_relationship.shows_compassion },
+                              { num: 29, label: 'Encouraging patient to share openly', data: empathyData.gathering_information.encouraging_sharing },
+                              { num: 31, label: 'Adjusts communication in the moment', data: empathyData.providing_information.adjusts_communication },
+                              { num: 33, label: 'Gives patient sense of ownership', data: empathyData.helping_decisions.gives_ownership },
+                              { num: 35, label: 'Makes a plan of action with patient', data: empathyData.helping_decisions.makes_plan },
+                            ].map((item, idx) => (
+                              <tr key={idx} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                  {item.num}
+                                </td>
+                                <td className="px-6 py-4 text-sm text-gray-900">
+                                  {item.label}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-center">
+                                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getScoreBadgeColor(item.data.score)}`}>
+                                    {item.data.score} - {getScoreLabel(item.data.score)}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 text-sm text-gray-700">
+                                  <div>
+                                    {/* Strengths */}
+                                    <div className="mb-2">
+                                      <button
+                                        onClick={() => toggleReasoning(`empathy-str-${idx}`)}
+                                        className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+                                      >
+                                        <span>{expandedReasoning.has(`empathy-str-${idx}`) ? '▼' : '▶'}</span>
+                                        <span>{expandedReasoning.has(`empathy-str-${idx}`) ? 'Hide' : 'Show'} strengths</span>
+                                      </button>
+                                      {expandedReasoning.has(`empathy-str-${idx}`) && (
+                                        <div className="mt-1.5 p-2.5 rounded-md bg-green-50 border border-green-200 text-xs text-gray-700 leading-relaxed">
+                                          {item.data.strengths}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Areas for Improvement */}
+                                    <div className="mb-2">
+                                      <button
+                                        onClick={() => toggleReasoning(`empathy-improve-${idx}`)}
+                                        className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+                                      >
+                                        <span>{expandedReasoning.has(`empathy-improve-${idx}`) ? '▼' : '▶'}</span>
+                                        <span>{expandedReasoning.has(`empathy-improve-${idx}`) ? 'Hide' : 'Show'} areas for improvement</span>
+                                      </button>
+                                      {expandedReasoning.has(`empathy-improve-${idx}`) && (
+                                        <div className="mt-1.5 p-2.5 rounded-md bg-amber-50 border border-amber-200 text-xs text-gray-700 leading-relaxed">
+                                          {item.data.areas_for_improvement}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Score Justification */}
+                                    <div className="mb-2">
+                                      <button
+                                        onClick={() => toggleReasoning(`empathy-just-${idx}`)}
+                                        className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1"
+                                      >
+                                        <span>{expandedReasoning.has(`empathy-just-${idx}`) ? '▼' : '▶'}</span>
+                                        <span>{expandedReasoning.has(`empathy-just-${idx}`) ? 'Hide' : 'Show'} score justification</span>
+                                      </button>
+                                      {expandedReasoning.has(`empathy-just-${idx}`) && (
+                                        <div className="mt-1.5 p-2.5 rounded-md bg-purple-50 border border-purple-200 text-xs text-gray-700 leading-relaxed">
+                                          {item.data.score_justification}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Evidence Instances */}
+                                    {item.data.evidence_instances && item.data.evidence_instances.length > 0 && (
+                                      <div className="mt-2">
+                                        <div className="text-xs font-medium text-gray-700 mb-1">Evidence ({item.data.evidence_instances.length} instance{item.data.evidence_instances.length > 1 ? 's' : ''}):</div>
+                                        {item.data.evidence_instances.map((instance, instIdx) => (
+                                          <div key={instIdx} className="mb-2 pl-2 border-l-2 border-gray-300">
+                                            <p className="text-xs text-gray-600 italic">"{instance.evidence}"</p>
+                                            {instance.timestamp && (
+                                              <button
+                                                onClick={() => scrollToTimestamp(instance.timestamp, instance.timestamp_end)}
+                                                className="text-xs text-primary-600 hover:text-primary-800 mt-0.5 underline"
+                                              >
+                                                {instance.timestamp}
+                                                {instance.timestamp_end && ` - ${instance.timestamp_end}`}
+                                              </button>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      No empathy evaluation data available
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Transcript Viewer */}
             {report.transcript && (
-              <div className="mt-8 pt-8 border-t border-gray-200">
-                <h2 className="text-2xl font-semibold text-gray-900 mb-4">Original Transcript</h2>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <pre className="whitespace-pre-wrap text-sm text-gray-700 font-mono">
-                    {report.transcript}
-                  </pre>
+              <div className="card">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-2xl font-semibold text-gray-900">Transcript</h2>
+                  {(highlightedRange || highlightedTimestamp) && (
+                    <button onClick={clearHighlight} className="text-sm text-gray-600 hover:text-gray-800">
+                      Clear Highlight
+                    </button>
+                  )}
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
+                  {report.transcript.split('\n').map((line, idx) => {
+                    const timestampMatch = line.match(/\[(\d{2}:\d{2}:\d{2})/);  
+                    const timestamp = timestampMatch ? timestampMatch[1] : null;
+                    
+                    let isHighlighted = false;
+                    if (highlightedRange && timestamp) {
+                      isHighlighted = timestamp >= highlightedRange.start && timestamp <= highlightedRange.end;
+                    } else if (timestamp && highlightedTimestamp === timestamp) {
+                      isHighlighted = true;
+                    }
+                    
+                    return (
+                      <div
+                        key={idx}
+                        id={timestamp ? `timestamp-${timestamp.replace(/:/g, '-')}` : undefined}
+                        className={`py-1 px-2 rounded transition-colors ${
+                          isHighlighted ? 'bg-yellow-200' : ''
+                        }`}
+                      >
+                        <span className="text-xs text-gray-500 font-mono mr-2">
+                          {timestamp || ''}
+                        </span>
+                        <span className="text-sm text-gray-800">{line.replace(/\[.*?\]/, '')}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
-          </div>
+          </>
         ) : (
           <>
             {/* Original structured view */}
@@ -284,6 +1017,16 @@ export default function Report() {
         </>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title="Confirm Status Change"
+        message={`Change status from "Not Sure" to "${confirmDialog.newStatus}" for item #${confirmDialog.itemIndex + 1}?\n\nThis will mark the item as manually reviewed.`}
+        onConfirm={confirmStatusChange}
+        onCancel={cancelStatusChange}
+        confirmText={`Mark as ${confirmDialog.newStatus}`}
+        confirmColor={confirmDialog.newStatus === 'Yes' ? 'green' : 'red'}
+      />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import Analyze from './pages/Analyze';
 import Reports from './pages/Reports';
 import Report from './pages/Report';
 import SignIn from './pages/SignIn';
+import Benchmark from './pages/Benchmark';
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
           <Route path="/reports/:id" element={<Report />} />
           <Route path="/report/:id" element={<Report />} />
           <Route path="/signin" element={<SignIn />} />
+          <Route path="/benchmark" element={<Benchmark />} />
         </Routes>
       </div>
     </Router>
