@@ -112,6 +112,7 @@ Evaluate based on whether the INFORMATION was obtained or the ACTION was perform
 **Item 7 - Cardiac tests:**
 ✓ "Ever had an EKG?" / "Echocardiogram?" / "Stress test?" / "Heart ultrasound?"
 ✓ "Any heart tests done?" / "Cardiac workup?"
+✗ Do NOT mark Yes for general cardiac history questions (Item 6). The student must ask about a specific named test or explicitly ask if tests have been done. Asking "any heart problems?" or "history of heart disease?" is Item 6, not Item 7.
 
 **Item 8 - Prior syncope:**
 ✓ "Ever fainted before?" / "Passed out before?" / "Lost consciousness before?"
@@ -135,12 +136,9 @@ For each checklist item:
 5. Provide reasoning explaining what you observed in the transcript (for all statuses including "Not Sure")
 
 For items WITH sub-items (2, 4, 5):
-1. Evaluate each sub-item individually first
-2. Count how many sub-items have status="Yes"
-3. Apply the threshold rule to calculate overall_status:
-   - Item 2 (at least 3 of 5): Yes count >= 3 → "Yes", else if (Yes + Not Sure) >= 3 → "Not Sure", else → "No"
-   - Item 4 (at least 3 of 4): Yes count >= 3 → "Yes", else if (Yes + Not Sure) >= 3 → "Not Sure", else → "No"
-   - Item 5 (at least 4 of 5): Yes count >= 4 → "Yes", else if (Yes + Not Sure) >= 4 → "Not Sure", else → "No"
+1. Evaluate each sub-item individually and return its status
+2. For each sub-item, prefer "Yes" over "Not Sure" whenever there is reasonable evidence — even indirect phrasing, paraphrases, or implied questions. Reserve "Not Sure" only when the transcript is genuinely ambiguous (e.g., the student's words could plausibly refer to this sub-item OR something else entirely)
+3. The overall_status for the parent item will be calculated automatically — you do not need to compute it
 
 ## JSON Output Format:
 

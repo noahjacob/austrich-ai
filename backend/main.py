@@ -215,36 +215,33 @@ async def analyze_transcript_endpoint(
                 
                 # Validate and fix overall_status for items with sub-items
                 for item in report_data.get('checklist', []):
-                    if item.get('has_subitems') and item.get('subitems'):
-                        yes_count = sum(1 for sub in item['subitems'] if sub.get('status') == 'Yes')
-                        not_sure_count = sum(1 for sub in item['subitems'] if sub.get('status') == 'Not Sure')
-                        
-                        # Item 2: at least 3 of 5
-                        if item['item'].startswith('2.'):
-                            if yes_count >= 3:
-                                item['overall_status'] = 'Yes'
-                            elif yes_count + not_sure_count >= 3:
-                                item['overall_status'] = 'Not Sure'
-                            else:
-                                item['overall_status'] = 'No'
-                        
-                        # Item 4: at least 3 of 4
-                        elif item['item'].startswith('4.'):
-                            if yes_count >= 3:
-                                item['overall_status'] = 'Yes'
-                            elif yes_count + not_sure_count >= 3:
-                                item['overall_status'] = 'Not Sure'
-                            else:
-                                item['overall_status'] = 'No'
-                        
-                        # Item 5: at least 4 of 5
-                        elif item['item'].startswith('5.'):
-                            if yes_count >= 4:
-                                item['overall_status'] = 'Yes'
-                            elif yes_count + not_sure_count >= 4:
-                                item['overall_status'] = 'Not Sure'
-                            else:
-                                item['overall_status'] = 'No'
+                    subitems = item.get('subitems') or []
+                    if not subitems:
+                        continue
+                    yes_count = sum(1 for sub in subitems if sub.get('status') == 'Yes')
+                    not_sure_count = sum(1 for sub in subitems if sub.get('status') == 'Not Sure')
+
+                    if item['item'].startswith('2.'):
+                        if yes_count >= 3:
+                            item['overall_status'] = 'Yes'
+                        elif yes_count + not_sure_count >= 3:
+                            item['overall_status'] = 'Not Sure'
+                        else:
+                            item['overall_status'] = 'No'
+                    elif item['item'].startswith('4.'):
+                        if yes_count >= 3:
+                            item['overall_status'] = 'Yes'
+                        elif yes_count + not_sure_count >= 3:
+                            item['overall_status'] = 'Not Sure'
+                        else:
+                            item['overall_status'] = 'No'
+                    elif item['item'].startswith('5.'):
+                        if yes_count >= 4:
+                            item['overall_status'] = 'Yes'
+                        elif yes_count + not_sure_count >= 4:
+                            item['overall_status'] = 'Not Sure'
+                        else:
+                            item['overall_status'] = 'No'
                 
                 # Clean timestamps in checklist items
                 for item in report_data.get('checklist', []):
@@ -570,22 +567,24 @@ async def benchmark_analyze(
                         report_data = json.loads(cleaned_text)
 
                         for item in report_data.get('checklist', []):
-                            if item.get('has_subitems') and item.get('subitems'):
-                                yes_count = sum(1 for sub in item['subitems'] if sub.get('status') == 'Yes')
-                                not_sure_count = sum(1 for sub in item['subitems'] if sub.get('status') == 'Not Sure')
+                            subitems = item.get('subitems') or []
+                            if not subitems:
+                                continue
+                            yes_count = sum(1 for sub in subitems if sub.get('status') == 'Yes')
+                            not_sure_count = sum(1 for sub in subitems if sub.get('status') == 'Not Sure')
 
-                                if item['item'].startswith('2.'):
-                                    if yes_count >= 3: item['overall_status'] = 'Yes'
-                                    elif yes_count + not_sure_count >= 3: item['overall_status'] = 'Not Sure'
-                                    else: item['overall_status'] = 'No'
-                                elif item['item'].startswith('4.'):
-                                    if yes_count >= 3: item['overall_status'] = 'Yes'
-                                    elif yes_count + not_sure_count >= 3: item['overall_status'] = 'Not Sure'
-                                    else: item['overall_status'] = 'No'
-                                elif item['item'].startswith('5.'):
-                                    if yes_count >= 4: item['overall_status'] = 'Yes'
-                                    elif yes_count + not_sure_count >= 4: item['overall_status'] = 'Not Sure'
-                                    else: item['overall_status'] = 'No'
+                            if item['item'].startswith('2.'):
+                                if yes_count >= 3: item['overall_status'] = 'Yes'
+                                elif yes_count + not_sure_count >= 3: item['overall_status'] = 'Not Sure'
+                                else: item['overall_status'] = 'No'
+                            elif item['item'].startswith('4.'):
+                                if yes_count >= 3: item['overall_status'] = 'Yes'
+                                elif yes_count + not_sure_count >= 3: item['overall_status'] = 'Not Sure'
+                                else: item['overall_status'] = 'No'
+                            elif item['item'].startswith('5.'):
+                                if yes_count >= 4: item['overall_status'] = 'Yes'
+                                elif yes_count + not_sure_count >= 4: item['overall_status'] = 'Not Sure'
+                                else: item['overall_status'] = 'No'
 
                         return {
                             'transcript_key': filename,
